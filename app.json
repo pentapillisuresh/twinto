@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "TWINTO",
+    "slug": "twinto-grocery",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "twinto",
+    "userInterfaceStyle": "light",
+
+    "icon": "./assets/images/logo1.png",
+
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+
+    "android": {
+      "package": "com.twinto.grocery",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo1.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    }
+  }
+}
