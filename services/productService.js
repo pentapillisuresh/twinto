@@ -1,283 +1,66 @@
 // services/productService.js
+import { apiRequest } from "./api";
 
-import { products } from "../data";
-import { USE_DUMMY_DATA, apiRequest } from "./api";
-
-/*
-|--------------------------------------------------------------------------
-| GET ALL PRODUCTS
-|--------------------------------------------------------------------------
-*/
+function normalizeProduct(p) {
+  if (!p) return null;
+  const price = Number(p.price) || 0;
+  const mrp = Number(p.mrp) || 0;
+  return {
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    description: p.description || "",
+    image: p.image || null,
+    price,
+    mrp,
+    unit: p.unit || "piece",
+    weight: p.unit || "piece",
+    stock: Number(p.stock) || 0,
+    categoryId: p.categoryId,
+    category: p.category?.name || p.category || "",
+    rating: Number(p.rating) || 0,
+    reviews: Number(p.reviewCount) || 0,
+    reviewCount: Number(p.reviewCount) || 0,
+    isBestseller: !!p.isBestseller,
+    isFeatured: !!p.isFeatured,
+    isActive: !!p.isActive,
+    discount:
+      mrp > price
+        ? Math.round(((mrp - price) / mrp) * 100)
+        : 0,
+    delivery: "15 mins",
+  };
+}
 
 export async function getProducts() {
-  try {
-    // Dummy data for development
-    if (USE_DUMMY_DATA) {
-      return products;
-    }
-
-    // Real API
-    const response = await apiRequest("/products");
-
-    return response?.data || response || [];
-  } catch (error) {
-    console.log("getProducts error:", error);
-
-    // Fallback to dummy data
-    return products;
-  }
+  const data = await apiRequest("/products");
+  return (data || []).map(normalizeProduct);
 }
-
-/*
-|--------------------------------------------------------------------------
-| GET PRODUCT BY ID
-|--------------------------------------------------------------------------
-*/
 
 export async function getProductById(id) {
-  try {
-    if (!id) {
-      return null;
-    }
-
-    // Dummy data for development
-    if (USE_DUMMY_DATA) {
-      const product = products.find(
-        (item) =>
-          String(item.id) === String(id)
-      );
-
-      return product || null;
-    }
-
-    // Real API
-    const response = await apiRequest(
-      `/products/${id}`
-    );
-
-    return response?.data || response || null;
-  } catch (error) {
-    console.log(
-      "getProductById error:",
-      error
-    );
-
-    // Fallback to dummy data
-    const product = products.find(
-      (item) =>
-        String(item.id) === String(id)
-    );
-
-    return product || null;
-  }
+  if (!id) return null;
+  const data = await apiRequest(`/products/${id}`);
+  return normalizeProduct(data);
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET PRODUCTS BY CATEGORY
-|--------------------------------------------------------------------------
-*/
-
-export async function getProductsByCategory(
-  category
-) {
-  try {
-    if (!category) {
-      return [];
-    }
-
-    // Dummy data
-    if (USE_DUMMY_DATA) {
-      return products.filter((product) => {
-        const categoryMatch =
-          String(product.category).toLowerCase() ===
-          String(category).toLowerCase();
-
-        const catsMatch =
-          Array.isArray(product.cats) &&
-          product.cats.some(
-            (cat) =>
-              String(cat).toLowerCase() ===
-              String(category).toLowerCase()
-          );
-
-        return categoryMatch || catsMatch;
-      });
-    }
-
-    // Real API
-    const response = await apiRequest(
-      `/products?category=${encodeURIComponent(
-        category
-      )}`
-    );
-
-    return response?.data || response || [];
-  } catch (error) {
-    console.log(
-      "getProductsByCategory error:",
-      error
-    );
-
-    // Dummy fallback
-    return products.filter((product) => {
-      const categoryMatch =
-        String(product.category).toLowerCase() ===
-        String(category).toLowerCase();
-
-      const catsMatch =
-        Array.isArray(product.cats) &&
-        product.cats.some(
-          (cat) =>
-            String(cat).toLowerCase() ===
-            String(category).toLowerCase()
-        );
-
-      return categoryMatch || catsMatch;
-    });
-  }
+export async function getProductsByCategory(categoryIdOrSlug) {
+  if (!categoryIdOrSlug) return [];
+  const data = await apiRequest(
+    `/products?categoryId=${encodeURIComponent(categoryIdOrSlug)}`
+  );
+  return (data || []).map(normalizeProduct);
 }
 
-/*
-|--------------------------------------------------------------------------
-| SEARCH PRODUCTS
-|--------------------------------------------------------------------------
-*/
-
-export async function searchProducts(
-  searchText
-) {
-  try {
-    const query = String(
-      searchText || ""
-    )
-      .trim()
-      .toLowerCase();
-
-    if (!query) {
-      return products;
-    }
-
-    // Dummy search
-    if (USE_DUMMY_DATA) {
-      return products.filter((product) => {
-        const name =
-          String(product.name || "")
-            .toLowerCase();
-
-        const category =
-          String(product.category || "")
-            .toLowerCase();
-
-        const description =
-          String(product.description || "")
-            .toLowerCase();
-
-        return (
-          name.includes(query) ||
-          category.includes(query) ||
-          description.includes(query)
-        );
-      });
-    }
-
-    // Real API
-    const response = await apiRequest(
-      `/products/search?q=${encodeURIComponent(
-        query
-      )}`
-    );
-
-    return response?.data || response || [];
-  } catch (error) {
-    console.log(
-      "searchProducts error:",
-      error
-    );
-
-    return products.filter((product) => {
-      const query = String(
-        searchText || ""
-      )
-        .trim()
-        .toLowerCase();
-
-      const name =
-        String(product.name || "")
-          .toLowerCase();
-
-      const category =
-        String(product.category || "")
-          .toLowerCase();
-
-      return (
-        name.includes(query) ||
-        category.includes(query)
-      );
-    });
-  }
+export async function searchProducts(q) {
+  const query = String(q || "").trim();
+  if (!query) return getProducts();
+  const data = await apiRequest(
+    `/products?search=${encodeURIComponent(query)}`
+  );
+  return (data || []).map(normalizeProduct);
 }
-
-/*
-|--------------------------------------------------------------------------
-| GET BESTSELLER PRODUCTS
-|--------------------------------------------------------------------------
-*/
 
 export async function getBestsellerProducts() {
-  try {
-    if (USE_DUMMY_DATA) {
-      return products
-        .filter(
-          (product) =>
-            product.rating >= 4.3
-        )
-        .slice(0, 6);
-    }
-
-    const response = await apiRequest(
-      "/products/bestsellers"
-    );
-
-    return response?.data || response || [];
-  } catch (error) {
-    console.log(
-      "getBestsellerProducts error:",
-      error
-    );
-
-    return products
-      .filter(
-        (product) =>
-          product.rating >= 4.3
-      )
-      .slice(0, 6);
-  }
-}
-
-/*
-|--------------------------------------------------------------------------
-| GET FEATURED PRODUCTS
-|--------------------------------------------------------------------------
-*/
-
-export async function getFeaturedProducts() {
-  try {
-    if (USE_DUMMY_DATA) {
-      return products.slice(0, 6);
-    }
-
-    const response = await apiRequest(
-      "/products/featured"
-    );
-
-    return response?.data || response || [];
-  } catch (error) {
-    console.log(
-      "getFeaturedProducts error:",
-      error
-    );
-
-    return products.slice(0, 6);
-  }
+  const all = await getProducts();
+  return all.filter((p) => p.rating >= 4.3).slice(0, 6);
 }

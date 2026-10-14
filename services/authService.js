@@ -1,48 +1,30 @@
-import { DUMMY_OTP } from "../constants";
+// services/authService.js
+// Real backend OTP flow. Backend uses fixed OTP 123456 in dev.
+
 import { apiRequest } from "./api";
 
-const USE_DUMMY_DATA = true;
-
 export async function sendOtp(mobile) {
-  if (USE_DUMMY_DATA) {
-    return {
-      success: true,
-      mobile,
-    };
-  }
-
   return apiRequest("/auth/send-otp", {
     method: "POST",
-    body: JSON.stringify({
-      mobile,
-    }),
+    body: JSON.stringify({ mobile }),
   });
 }
 
-export async function verifyOtp(mobile, otp) {
-  if (USE_DUMMY_DATA) {
-    if (otp !== DUMMY_OTP) {
-      throw new Error(
-        "Invalid OTP. Demo OTP is 123456."
-      );
-    }
-
-    return {
-      user: {
-        id: "1",
-        name: "ANIL",
-        mobile,
-      },
-
-      token: "dummy-token",
-    };
-  }
-
+export async function verifyOtp(mobile, otp, name) {
+  // Returns: { token: "<real JWT>", user: {...} }
   return apiRequest("/auth/verify-otp", {
     method: "POST",
-    body: JSON.stringify({
-      mobile,
-      otp,
-    }),
+    body: JSON.stringify({ mobile, otp, name }),
+  });
+}
+
+export async function getMe() {
+  return apiRequest("/auth/me");
+}
+
+export async function adminLogin(email, password) {
+  return apiRequest("/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
   });
 }

@@ -92,16 +92,10 @@ export default function OTP() {
 
 
     try {
-      const response = await verifyOtp(
-        mobile,
-        otp
-      );
-
-
-      await login(response.user);
-
-
-      router.replace("/location");
+     const response = await verifyOtp(mobile, otp);
+console.log("[OTP] verifyOtp response:", response);   // ← add this to verify
+await login(response);                                // ✅ pass the FULL object
+router.replace("/location");
 
     } catch (error) {
       Alert.alert(

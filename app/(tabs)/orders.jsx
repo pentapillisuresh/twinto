@@ -115,9 +115,9 @@ export default function OrdersScreen() {
             </View>
 
             <View style={styles.orderHeadingText}>
-              <Text style={styles.orderId}>
-                Order #{item.id}
-              </Text>
+          <Text style={styles.orderId}>
+  Order #{item.orderNumber || item.id}
+</Text>
 
               <Text style={styles.date}>
                 {item.date}

@@ -1,143 +1,126 @@
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
-  ScrollView,
 } from "react-native";
-
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { getCategories } from "../../services/categoryService";
 
 const PREMIUM = {
   primary: "#C9004F",
   navy: "#172033",
   white: "#FFFFFF",
-  background: "#FFF9FB",
-  pinkSoft: "#FFF0F5", 
+  pinkSoft: "#FFF0F5",
   pinkLight: "#FDE3EC",
   border: "#E9DDE2",
   muted: "#858B95",
 };
 
-import { categories } from "../../data";
-
 export default function CategoryRow() {
   const router = useRouter();
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const visibleCategories = categories
-    .filter((category) => category.id !== "all")
-    .slice(0, 8);
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await getCategories();
+        setCategories(list.slice(0, 8));
+      } catch (e) {
+        console.log("CategoryRow error:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingBox}>
+        <ActivityIndicator size="small" color={PREMIUM.primary} />
+      </View>
+    );
+  }
+
+  if (categories.length === 0) return null;
 
   return (
     <View style={styles.section}>
-     
-     
-
-      {/* Category Grid */}
       <View style={styles.gridContainer}>
-        {visibleCategories.map((category) => (
-          <Pressable
-            key={category.id}
-            onPress={() => router.push(`/category/${category.id}`)}
-            style={({ pressed }) => [
-              styles.item,
-              pressed && styles.itemPressed,
-            ]}
-          >
-            {/* Image Card with Pink Background */}
-            <View style={styles.imageBox}>
-              <Image
-                source={category.image}
-                style={styles.image}
-                resizeMode="contain"
-              />
-            </View>
+        {categories.map((category) => {
+          const imageSource = category.image
+            ? { uri: category.image }
+            : null;
 
-            {/* Name */}
-            <Text numberOfLines={1} style={styles.name}>
-              {category.name}
-            </Text>
-          </Pressable>
-        ))}
+          return (
+            <Pressable
+              key={category.id}
+              onPress={() =>
+                router.push(`/category/${category.slug}`)
+              }
+              style={({ pressed }) => [
+                styles.item,
+                pressed && styles.itemPressed,
+              ]}
+            >
+              <View style={styles.imageBox}>
+                {imageSource ? (
+                  <Image
+                    source={imageSource}
+                    style={styles.image}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Ionicons
+                    name="grid-outline"
+                    size={26}
+                    color={PREMIUM.primary}
+                  />
+                )}
+              </View>
+
+              <Text numberOfLines={1} style={styles.name}>
+                {category.name}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  section: {
-    marginTop: 24,
-    // 1. REDUCED PADDING: Changed from 18 to 12 to give more room for larger images
-    paddingHorizontal: 12, 
-  },
-
-  /* Header */
-  header: {
-    flexDirection: "row",
+  section: { marginTop: 24, paddingHorizontal: 12 },
+  loadingBox: {
+    paddingVertical: 30,
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-    // Add a little padding back just for the header text so it doesn't touch the edge
-    paddingHorizontal: 6, 
+    justifyContent: "center",
   },
-
-  title: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: PREMIUM.navy,
-    letterSpacing: -0.4,
-  },
-
-  seeAllButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-  },
-
-  seeAll: {
-    color: PREMIUM.primary,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  /* Grid Layout */
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 16, 
+    rowGap: 16,
   },
-
-  item: {
-    // 2. WIDTH ADJUSTED: Slightly increased to 24% to accommodate the larger image
-    width: "24%", 
-    alignItems: "center",
-  },
-
-  itemPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.96 }],
-  },
-
-  /* Image Box with Soft Pink Background */
+  item: { width: "24%", alignItems: "center" },
+  itemPressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
   imageBox: {
-    // 3. IMAGE SIZE INCREASED
-    width: 85,        
-    height: 85,       
-    borderRadius: 18, 
-    backgroundColor: PREMIUM.pinkSoft, 
+    width: 85,
+    height: 85,
+    borderRadius: 18,
+    backgroundColor: PREMIUM.pinkSoft,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 8,
+    overflow: "hidden",
   },
-
-  image: {
-    // 4. INNER IMAGE SCALE
-    width: "75%", 
-    height: "75%",
-  },
-
-  /* Name */
+  image: { width: "100%", height: "100%" },
   name: {
     color: PREMIUM.navy,
     fontSize: 11,

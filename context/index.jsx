@@ -1,10 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   DELIVERY_PARTNER_FEE,
   FREE_DELIVERY_MAX_ITEMS,
   PLATFORM_FEE,
 } from "../constants";
+import { setToken, clearToken } from "../services/api";
 
 const AuthContext = createContext(null);
 const LocationContext = createContext(null);
@@ -19,39 +26,50 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadUser();
+    (async () => {
+      try {
+        const savedUser = await AsyncStorage.getItem("twinto_user");
+        const savedToken = await AsyncStorage.getItem("twinto_token_v2");
+        if (savedUser && savedToken) {
+          setUserState(JSON.parse(savedUser));
+        }
+      } catch (error) {
+        console.log("Load user error:", error);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  async function loadUser() {
-    try {
-      const savedUser = await AsyncStorage.getItem("twinto_user");
+  /**
+   * login accepts:
+   *   - { user, token }   ← from verifyOtp (RECOMMENDED)
+   *   - plain user object (backward compat, no token stored)
+   */
+  async function login(payload) {
+    const userObj = payload?.user || payload;
+    const token = payload?.token || null;
 
-      if (savedUser) {
-        setUserState(JSON.parse(savedUser));
+    console.log(
+      "[AUTH] login() called. token present:",
+      Boolean(token),
+      "user:",
+      userObj?.mobile || userObj?.name
+    );
+
+    try {
+      if (token) {
+        await setToken(token);
+        await AsyncStorage.setItem("twinto_token_v2", token);
       }
-    } catch (error) {
-      console.log("Load user error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  async function login(phone) {
-    const newUser = {
-      id: "USR001",
-      name: "ANIL",
-      phone,
-    };
-
-    try {
       await AsyncStorage.setItem(
         "twinto_user",
-        JSON.stringify(newUser)
+        JSON.stringify(userObj)
       );
 
-      setUserState(newUser);
-
-      return newUser;
+      setUserState(userObj);
+      return userObj;
     } catch (error) {
       console.log("Login error:", error);
       throw error;
@@ -61,6 +79,8 @@ export function AuthProvider({ children }) {
   async function logout() {
     try {
       await AsyncStorage.removeItem("twinto_user");
+      await AsyncStorage.removeItem("twinto_token_v2");
+      await clearToken();
       setUserState(null);
     } catch (error) {
       console.log("Logout error:", error);
@@ -68,17 +88,12 @@ export function AuthProvider({ children }) {
   }
 
   async function updateUser(data) {
-    const updatedUser = {
-      ...user,
-      ...data,
-    };
-
+    const updatedUser = { ...user, ...data };
     try {
       await AsyncStorage.setItem(
         "twinto_user",
         JSON.stringify(updatedUser)
       );
-
       setUserState(updatedUser);
     } catch (error) {
       console.log("Update user error:", error);
@@ -109,20 +124,10 @@ export function useAuth() {
 ========================= */
 
 export function LocationProvider({ children }) {
-  const [location, setLocation] = useState({
-    id: "LOC001",
-    name: "Anantapur",
-    available: true,
-    deliveryTime: "17 mins",
-  });
+  const [location, setLocation] = useState(null);
 
   return (
-    <LocationContext.Provider
-      value={{
-        location,
-        setLocation,
-      }}
-    >
+    <LocationContext.Provider value={{ location, setLocation }}>
       {children}
     </LocationContext.Provider>
   );
@@ -133,7 +138,7 @@ export function useLocation() {
 }
 
 /* =========================
-   CART CONTEXT
+   CART CONTEXT  (LOCAL)
 ========================= */
 
 export function CartProvider({ children }) {
@@ -141,71 +146,46 @@ export function CartProvider({ children }) {
   const [tip, setTip] = useState(10);
 
   useEffect(() => {
-    loadCart();
+    (async () => {
+      try {
+        const savedCart = await AsyncStorage.getItem("twinto_cart");
+        if (savedCart) setCart(JSON.parse(savedCart));
+      } catch (error) {
+        console.log("Load cart error:", error);
+      }
+    })();
   }, []);
 
   useEffect(() => {
-    saveCart();
+    AsyncStorage.setItem(
+      "twinto_cart",
+      JSON.stringify(cart)
+    ).catch(() => {});
   }, [cart]);
-
-  async function loadCart() {
-    try {
-      const savedCart = await AsyncStorage.getItem("twinto_cart");
-
-      if (savedCart) {
-        setCart(JSON.parse(savedCart));
-      }
-    } catch (error) {
-      console.log("Load cart error:", error);
-    }
-  }
-
-  async function saveCart() {
-    try {
-      await AsyncStorage.setItem(
-        "twinto_cart",
-        JSON.stringify(cart)
-      );
-    } catch (error) {
-      console.log("Save cart error:", error);
-    }
-  }
 
   function add(product) {
     setCart((currentCart) => {
       const existingProduct = currentCart.find(
-        (item) => item.id === product.id
+        (item) => String(item.id) === String(product.id)
       );
 
       if (existingProduct) {
         return currentCart.map((item) =>
-          item.id === product.id
-            ? {
-                ...item,
-                quantity: item.quantity + 1,
-              }
+          String(item.id) === String(product.id)
+            ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
 
-      return [
-        ...currentCart,
-        {
-          ...product,
-          quantity: 1,
-        },
-      ];
+      return [...currentCart, { ...product, quantity: 1 }];
     });
   }
 
   function increase(productId) {
     setCart((currentCart) =>
       currentCart.map((item) =>
-        item.id === productId
-          ? {
-              ...item,
-              quantity: item.quantity + 1,
-            }
+        String(item.id) === String(productId)
+          ? { ...item, quantity: item.quantity + 1 }
           : item
       )
     );
@@ -215,11 +195,8 @@ export function CartProvider({ children }) {
     setCart((currentCart) =>
       currentCart
         .map((item) =>
-          item.id === productId
-            ? {
-                ...item,
-                quantity: item.quantity - 1,
-              }
+          String(item.id) === String(productId)
+            ? { ...item, quantity: item.quantity - 1 }
             : item
         )
         .filter((item) => item.quantity > 0)
@@ -231,60 +208,40 @@ export function CartProvider({ children }) {
   }
 
   const itemCount = useMemo(() => {
-    return cart.reduce(
-      (total, item) => total + item.quantity,
-      0
-    );
+    return cart.reduce((total, item) => total + item.quantity, 0);
   }, [cart]);
 
   const itemTotal = useMemo(() => {
     return cart.reduce(
-      (total, item) => total + item.price * item.quantity,
+      (total, item) => total + Number(item.price) * item.quantity,
       0
     );
   }, [cart]);
 
   const freeDelivery =
-    itemCount > 0 &&
-    itemCount <= FREE_DELIVERY_MAX_ITEMS;
+    itemCount > 0 && itemCount <= FREE_DELIVERY_MAX_ITEMS;
 
   const deliveryFee =
-    itemCount === 0 || freeDelivery
-      ? 0
-      : DELIVERY_PARTNER_FEE;
+    itemCount === 0 || freeDelivery ? 0 : DELIVERY_PARTNER_FEE;
 
-  const total =
-    itemTotal +
-    PLATFORM_FEE +
-    deliveryFee +
-    tip;
+  const total = itemTotal + PLATFORM_FEE + deliveryFee + tip;
 
   return (
     <CartContext.Provider
       value={{
         cart,
-
-        // Main function
         add,
-
-        // Alias so existing screens using addToCart continue to work
         addToCart: add,
-
         increase,
         decrease,
         clear,
-
         itemCount,
         itemTotal,
-
         freeDelivery,
         deliveryFee,
-
         platformFee: PLATFORM_FEE,
-
         tip,
         setTip,
-
         total,
       }}
     >

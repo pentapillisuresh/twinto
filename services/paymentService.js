@@ -1,8 +1,9 @@
-export async function createPayment(paymentData) {
-  return {
-    success: true,
-    paymentId:
-      "PAY" + Math.floor(Math.random() * 900000 + 100000),
-    ...paymentData,
-  };
+// services/paymentService.js
+import { apiRequest } from "./api";
+
+export async function verifyPayment(payload) {
+  return apiRequest("/payments/verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
