@@ -1,7 +1,7 @@
 // constants/index.js
 // Pure constants — DO NOT import from services/ or context/ here.
 
-export const API_URL = "http://10.56.245.71:5000/api/v1";
+export const API_URL = "http://10.29.236.71:5000/api/v1";
 
 export const COLORS = {
   primary: "#C9004F",

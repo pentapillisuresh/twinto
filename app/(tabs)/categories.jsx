@@ -223,8 +223,9 @@ const styles = StyleSheet.create({
     marginTop: 18,
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    justifyContent: "flex-start", // Changed from space-between
     alignItems: "flex-start",
+    columnGap: 10, // Added consistent horizontal spacing
   },
   card: {
     width: "31.8%",

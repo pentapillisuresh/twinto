@@ -1,18 +1,25 @@
-import { useEffect, useState } from "react";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { useLocation } from "../../context";
 import { getLocations } from "../../services/locationService";
+
+const LOCATION_STORAGE_KEY = "twinto_selected_location";
 
 const PREMIUM = {
   primary: "#C9004F",
@@ -33,36 +40,260 @@ export default function LocationScreen() {
 
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [selectingId, setSelectingId] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await getLocations();
-        setLocations(list || []);
-      } catch (e) {
-        console.log("Locations load error:", e);
-        setError(e?.message || "Could not load locations");
-      } finally {
-        setLoading(false);
+  const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
+  const navigatingRef = useRef(false);
+
+  // ========================================
+  // FETCH LOCATIONS
+  // ========================================
+
+  const loadLocations = useCallback(async (refresh = false) => {
+    const requestId = ++requestIdRef.current;
+
+    if (refresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError(null);
+
+    try {
+      const response = await getLocations();
+
+      // Supports:
+      // [...]
+      // { locations: [...] }
+      // { data: [...] }
+      const list = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.locations)
+          ? response.locations
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
+
+      if (
+        !mountedRef.current ||
+        requestId !== requestIdRef.current
+      ) {
+        return;
       }
-    })();
+
+      setLocations(list);
+    } catch (e) {
+      console.log(
+        "[LOCATION] Load error:",
+        e?.message
+      );
+
+      if (
+        mountedRef.current &&
+        requestId === requestIdRef.current
+      ) {
+        setError(
+          e?.message ||
+            "Could not load delivery locations."
+        );
+      }
+    } finally {
+      if (
+        mountedRef.current &&
+        requestId === requestIdRef.current
+      ) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
   }, []);
 
-  function selectLocation(location) {
-    setLocation(location);
+  useEffect(() => {
+    mountedRef.current = true;
+    loadLocations();
 
-    if (!location.available) {
-      router.push("/location/unavailable");
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, [loadLocations]);
+
+  // ========================================
+  // SELECT LOCATION
+  // ========================================
+
+  async function selectLocation(location) {
+    if (
+      navigatingRef.current ||
+      !location ||
+      location.id == null
+    ) {
       return;
     }
 
-    router.replace("/(tabs)");
+    navigatingRef.current = true;
+    setSelectingId(String(location.id));
+
+    try {
+      // Store the location for future sessions.
+      await AsyncStorage.setItem(
+        LOCATION_STORAGE_KEY,
+        JSON.stringify(location)
+      );
+
+      // Update global location context.
+      setLocation(location);
+
+      if (!location.available) {
+        router.push("/location/unavailable");
+        return;
+      }
+
+      router.replace("/(tabs)");
+    } catch (e) {
+      console.log(
+        "[LOCATION] Selection error:",
+        e?.message
+      );
+
+      // Even if persistence fails, allow the
+      // customer to continue this session.
+      setLocation(location);
+
+      if (!location.available) {
+        router.push("/location/unavailable");
+      } else {
+        router.replace("/(tabs)");
+      }
+    } finally {
+      navigatingRef.current = false;
+
+      if (mountedRef.current) {
+        setSelectingId(null);
+      }
+    }
   }
+
+  // ========================================
+  // LOCATION CARD
+  // ========================================
+
+  function renderLocation(location) {
+    const available =
+      location.available === true ||
+      location.available === 1 ||
+      location.available === "true";
+
+    const selected =
+      selectingId === String(location.id);
+
+    const deliveryTime =
+      location.deliveryTime ||
+      location.delivery_time ||
+      null;
+
+    return (
+      <Pressable
+        key={String(location.id)}
+        onPress={() =>
+          selectLocation({
+            ...location,
+            available,
+          })
+        }
+        disabled={selectingId !== null}
+        accessibilityRole="button"
+        accessibilityLabel={`Select ${location.name}`}
+        style={({ pressed }) => [
+          styles.locationCard,
+          pressed && styles.locationCardPressed,
+          selected && styles.locationCardSelected,
+        ]}
+      >
+        {/* LOCATION ICON */}
+        <View
+          style={[
+            styles.locationIcon,
+            !available &&
+              styles.locationIconUnavailable,
+          ]}
+        >
+          <Ionicons
+            name={
+              available
+                ? "location"
+                : "location-outline"
+            }
+            size={23}
+            color={
+              available
+                ? PREMIUM.primary
+                : PREMIUM.unavailable
+            }
+          />
+        </View>
+
+        {/* LOCATION DETAILS */}
+        <View style={styles.locationInfo}>
+          <View style={styles.nameRow}>
+            <Text style={styles.locationName}>
+              {location.name || "Delivery Location"}
+            </Text>
+
+            {available && (
+              <View style={styles.availableBadge}>
+                <View style={styles.availableDot} />
+
+                <Text style={styles.availableText}>
+                  Available
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.locationStatus}>
+            {available
+              ? deliveryTime
+                ? `Delivery in ${deliveryTime}`
+                : "Delivery available"
+              : "Currently unavailable"}
+          </Text>
+        </View>
+
+        {/* RIGHT ARROW */}
+        <View style={styles.arrowBox}>
+          {selected ? (
+            <ActivityIndicator
+              size="small"
+              color={PREMIUM.primary}
+            />
+          ) : (
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={
+                available
+                  ? PREMIUM.navy
+                  : PREMIUM.unavailable
+              }
+            />
+          )}
+        </View>
+      </Pressable>
+    );
+  }
+
+  // ========================================
+  // UI
+  // ========================================
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.topIcon}>
           <Ionicons
@@ -82,12 +313,23 @@ export default function LocationScreen() {
         </Text>
       </View>
 
-      {/* Location List */}
+      {/* LOCATION LIST */}
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadLocations(true)}
+            colors={[PREMIUM.primary]}
+            tintColor={PREMIUM.primary}
+          />
+        }
       >
-        <Text style={styles.sectionTitle}>SELECT LOCATION</Text>
+        <Text style={styles.sectionTitle}>
+          SELECT LOCATION
+        </Text>
 
         {loading ? (
           <View style={styles.centerBox}>
@@ -95,6 +337,7 @@ export default function LocationScreen() {
               size="large"
               color={PREMIUM.primary}
             />
+
             <Text style={styles.centerText}>
               Loading locations...
             </Text>
@@ -103,94 +346,59 @@ export default function LocationScreen() {
           <View style={styles.centerBox}>
             <Ionicons
               name="alert-circle-outline"
-              size={32}
+              size={36}
               color={PREMIUM.primary}
             />
-            <Text style={styles.centerText}>{error}</Text>
+
+            <Text style={styles.centerText}>
+              {error}
+            </Text>
+
+            <Pressable
+              onPress={() => loadLocations()}
+              style={({ pressed }) => [
+                styles.retryButton,
+                pressed && styles.retryPressed,
+              ]}
+            >
+              <Ionicons
+                name="refresh-outline"
+                size={17}
+                color={PREMIUM.white}
+              />
+
+              <Text style={styles.retryText}>
+                Try Again
+              </Text>
+            </Pressable>
           </View>
         ) : locations.length === 0 ? (
           <View style={styles.centerBox}>
             <Ionicons
               name="location-outline"
-              size={32}
+              size={36}
               color={PREMIUM.muted}
             />
+
             <Text style={styles.centerText}>
               No delivery locations available yet.
             </Text>
+
+            <Pressable
+              onPress={() => loadLocations()}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryText}>
+                Refresh Locations
+              </Text>
+            </Pressable>
           </View>
         ) : (
-          locations.map((location) => (
-            <Pressable
-              key={String(location.id)}
-              onPress={() => selectLocation(location)}
-              style={({ pressed }) => [
-                styles.locationCard,
-                pressed && styles.locationCardPressed,
-              ]}
-            >
-              <View
-                style={[
-                  styles.locationIcon,
-                  !location.available &&
-                    styles.locationIconUnavailable,
-                ]}
-              >
-                <Ionicons
-                  name={
-                    location.available
-                      ? "location"
-                      : "location-outline"
-                  }
-                  size={23}
-                  color={
-                    location.available
-                      ? PREMIUM.primary
-                      : PREMIUM.unavailable
-                  }
-                />
-              </View>
-
-              <View style={styles.locationInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.locationName}>
-                    {location.name}
-                  </Text>
-
-                  {location.available && (
-                    <View style={styles.availableBadge}>
-                      <View style={styles.availableDot} />
-                      <Text style={styles.availableText}>
-                        Available
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.locationStatus}>
-                  {location.available
-                    ? `Delivery in ${location.deliveryTime}`
-                    : "Currently unavailable"}
-                </Text>
-              </View>
-
-              <View style={styles.arrowBox}>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={
-                    location.available
-                      ? PREMIUM.navy
-                      : PREMIUM.unavailable
-                  }
-                />
-              </View>
-            </Pressable>
-          ))
+          locations.map(renderLocation)
         )}
       </ScrollView>
 
-      {/* Bottom Info */}
+      {/* BOTTOM INFO */}
       <View style={styles.bottom}>
         <View style={styles.infoIcon}>
           <Ionicons
@@ -199,6 +407,7 @@ export default function LocationScreen() {
             color={PREMIUM.primary}
           />
         </View>
+
         <Text style={styles.bottomText}>
           You can change your delivery location anytime{"\n"}
           from the Home screen.
@@ -208,8 +417,15 @@ export default function LocationScreen() {
   );
 }
 
+// ==========================================
+// STYLES
+// ==========================================
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PREMIUM.background },
+  container: {
+    flex: 1,
+    backgroundColor: PREMIUM.background,
+  },
 
   header: {
     backgroundColor: PREMIUM.white,
@@ -220,6 +436,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
+
   topIcon: {
     width: 70,
     height: 70,
@@ -231,6 +448,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PREMIUM.pinkLight,
   },
+
   title: {
     fontSize: 27,
     fontWeight: "900",
@@ -238,6 +456,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     letterSpacing: -0.6,
   },
+
   subtitle: {
     marginTop: 10,
     fontSize: 14,
@@ -251,6 +470,7 @@ const styles = StyleSheet.create({
     paddingTop: 25,
     paddingBottom: 40,
   },
+
   sectionTitle: {
     fontSize: 11,
     fontWeight: "900",
@@ -265,12 +485,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   centerText: {
     marginTop: 12,
     color: PREMIUM.muted,
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
+    lineHeight: 19,
+  },
+
+  retryButton: {
+    marginTop: 18,
+    backgroundColor: PREMIUM.primary,
+    borderRadius: 22,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  retryPressed: {
+    opacity: 0.8,
+  },
+
+  retryText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: PREMIUM.white,
   },
 
   locationCard: {
@@ -284,11 +527,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+
   locationCardPressed: {
     transform: [{ scale: 0.985 }],
     borderColor: PREMIUM.primary,
     backgroundColor: PREMIUM.pinkSoft,
   },
+
+  locationCardSelected: {
+    borderColor: PREMIUM.primary,
+  },
+
   locationIcon: {
     width: 50,
     height: 50,
@@ -297,18 +546,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  locationIconUnavailable: { backgroundColor: "#F2F3F5" },
-  locationInfo: { flex: 1, marginLeft: 14, marginRight: 8 },
+
+  locationIconUnavailable: {
+    backgroundColor: "#F2F3F5",
+  },
+
+  locationInfo: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 8,
+  },
+
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
   },
+
   locationName: {
     fontSize: 16,
     fontWeight: "800",
     color: PREMIUM.navy,
   },
+
   availableBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -318,6 +578,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginLeft: 8,
   },
+
   availableDot: {
     width: 5,
     height: 5,
@@ -325,17 +586,20 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM.success,
     marginRight: 5,
   },
+
   availableText: {
     fontSize: 9,
     fontWeight: "800",
     color: PREMIUM.success,
   },
+
   locationStatus: {
     marginTop: 6,
     fontSize: 12,
     color: PREMIUM.muted,
     fontWeight: "500",
   },
+
   arrowBox: {
     width: 34,
     height: 34,
@@ -354,6 +618,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
   },
+
   infoIcon: {
     width: 30,
     height: 30,
@@ -363,6 +628,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
+
   bottomText: {
     color: PREMIUM.muted,
     fontSize: 11,

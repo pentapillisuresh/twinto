@@ -328,8 +328,9 @@ const styles = StyleSheet.create({
     marginTop: 14,
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    justifyContent: "flex-start", // Changed from space-between
     alignItems: "flex-start",
+    gap: 12, // Added gap for consistent spacing
   },
   loadingBox: { paddingVertical: 60, alignItems: "center" },
   empty: { alignItems: "center", paddingHorizontal: 30, paddingVertical: 45 },
