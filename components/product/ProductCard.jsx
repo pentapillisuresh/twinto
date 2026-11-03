@@ -1,7 +1,17 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+
+import { useState } from "react";
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCart } from "../../context";
+import { getImageUrl } from "../../utils/imageUrl";
 
 const COLORS = {
   primary: "#C9004F",
@@ -18,81 +28,146 @@ const COLORS = {
 
 export default function ProductCard({ product, item }) {
   const router = useRouter();
-  const { cart = [], addToCart, increase, decrease } = useCart();
+
+  const {
+    cart = [],
+    addToCart,
+    increase,
+    decrease,
+  } = useCart();
 
   const currentProduct = product || item;
+
+  const [imageFailed, setImageFailed] = useState(false);
+
   if (!currentProduct) return null;
 
   const cartItem = cart.find((c) => {
     if (!c) return false;
+
     const cid = c.id ?? c.product?.id;
+
     return String(cid) === String(currentProduct.id);
   });
 
   const quantity = Number(cartItem?.quantity) || 0;
 
-  const imageSource = currentProduct.image
-    ? { uri: currentProduct.image }
-    : null;
+  // Convert localhost URLs into the Android-accessible backend URL.
+  const imageUrl = getImageUrl(
+    currentProduct.image ||
+      currentProduct.imageUrl ||
+      currentProduct.image_url
+  );
 
   return (
     <Pressable
-      onPress={() => router.push(`/product/${currentProduct.id}`)}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={() =>
+        router.push(`/product/${currentProduct.id}`)
+      }
+      style={({ pressed }) => [
+        styles.card,
+        pressed && styles.cardPressed,
+      ]}
     >
+      {/* PRODUCT IMAGE */}
       <View style={styles.imageCard}>
-        {imageSource ? (
+        {imageUrl && !imageFailed ? (
           <Image
-            source={imageSource}
+            source={{ uri: imageUrl }}
             style={styles.productImage}
             resizeMode="cover"
+            onError={(event) => {
+              console.log(
+                "[PRODUCT IMAGE FAILED]",
+                currentProduct.name,
+                imageUrl,
+                event.nativeEvent?.error
+              );
+
+              setImageFailed(true);
+            }}
+            onLoad={() => {
+              console.log(
+                "[PRODUCT IMAGE LOADED]",
+                currentProduct.name
+              );
+            }}
           />
         ) : (
-          <Ionicons name="image-outline" size={32} color={COLORS.muted} />
+          <View style={styles.imagePlaceholder}>
+            <Ionicons
+              name="image-outline"
+              size={32}
+              color={COLORS.muted}
+            />
+          </View>
         )}
 
+        {/* FAVORITE ICON */}
         <View style={styles.favoriteButton}>
-          <Ionicons name="heart-outline" size={18} color={COLORS.white} />
+          <Ionicons
+            name="heart-outline"
+            size={18}
+            color={COLORS.white}
+          />
         </View>
 
+        {/* ADD TO CART */}
         {quantity === 0 ? (
           <Pressable
             style={({ pressed }) => [
               styles.addButton,
               pressed && styles.addButtonPressed,
             ]}
-            onPress={(e) => {
-              e.stopPropagation();
+            onPress={(event) => {
+              event.stopPropagation();
               addToCart(currentProduct);
             }}
           >
-            <Ionicons name="add" size={22} color={COLORS.primary} />
+            <Ionicons
+              name="add"
+              size={22}
+              color={COLORS.primary}
+            />
           </Pressable>
         ) : (
           <View style={styles.quantityContainer}>
             <Pressable
               style={styles.quantityButton}
-              onPress={(e) => {
-                e.stopPropagation();
+              onPress={(event) => {
+                event.stopPropagation();
                 decrease(currentProduct.id);
               }}
             >
-              <Ionicons name="remove" size={14} color={COLORS.primary} />
+              <Ionicons
+                name="remove"
+                size={14}
+                color={COLORS.primary}
+              />
             </Pressable>
-            <Text style={styles.quantity}>{quantity}</Text>
+
+            <Text style={styles.quantity}>
+              {quantity}
+            </Text>
+
             <Pressable
               style={styles.quantityButton}
-              onPress={(e) => {
-                e.stopPropagation();
+              onPress={(event) => {
+                event.stopPropagation();
                 increase(currentProduct.id);
               }}
             >
-              <Ionicons name="add" size={14} color={COLORS.primary} />
+              <Ionicons
+                name="add"
+                size={14}
+                color={COLORS.primary}
+              />
             </Pressable>
           </View>
         )}
       </View>
 
+      {/* PRODUCT DETAILS */}
       <View style={styles.details}>
         {currentProduct.discount > 0 && (
           <View style={styles.discountBadge}>
@@ -102,28 +177,54 @@ export default function ProductCard({ product, item }) {
           </View>
         )}
 
+        {/* PRICE */}
         <View style={styles.priceRow}>
-          <Text style={styles.price}>₹{currentProduct.price}</Text>
+          <Text style={styles.price}>
+            ₹{currentProduct.price}
+          </Text>
+
           {currentProduct.mrp > currentProduct.price && (
-            <Text style={styles.mrp}>₹{currentProduct.mrp}</Text>
+            <Text style={styles.mrp}>
+              ₹{currentProduct.mrp}
+            </Text>
           )}
         </View>
 
-        <Text style={styles.category} numberOfLines={1}>
+        {/* CATEGORY */}
+        <Text
+          style={styles.category}
+          numberOfLines={1}
+        >
           {currentProduct.category}
         </Text>
 
-        <Text style={styles.name} numberOfLines={2}>
+        {/* NAME */}
+        <Text
+          style={styles.name}
+          numberOfLines={2}
+        >
           {currentProduct.name}
         </Text>
 
-        <Text style={styles.weight} numberOfLines={1}>
-          {currentProduct.weight}
+        {/* WEIGHT / UNIT */}
+        <Text
+          style={styles.weight}
+          numberOfLines={1}
+        >
+          {currentProduct.weight || currentProduct.unit}
         </Text>
 
+        {/* DELIVERY */}
         <View style={styles.deliveryRow}>
-          <Ionicons name="flash" size={11} color={COLORS.primary} />
-          <Text style={styles.delivery}>{currentProduct.delivery}</Text>
+          <Ionicons
+            name="flash"
+            size={11}
+            color={COLORS.primary}
+          />
+
+          <Text style={styles.delivery}>
+            {currentProduct.delivery || "15 mins"}
+          </Text>
         </View>
       </View>
     </Pressable>
@@ -131,8 +232,16 @@ export default function ProductCard({ product, item }) {
 }
 
 const styles = StyleSheet.create({
-  card: { width: "31.5%", backgroundColor: "transparent", marginBottom: 14 },
-  cardPressed: { transform: [{ scale: 0.97 }] },
+  card: {
+    width: "31.5%",
+    backgroundColor: "transparent",
+    marginBottom: 14,
+  },
+
+  cardPressed: {
+    transform: [{ scale: 0.97 }],
+  },
+
   imageCard: {
     width: "100%",
     height: 108,
@@ -145,7 +254,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  productImage: { width: "100%", height: "100%", borderRadius: 11 },
+
+  productImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 11,
+  },
+
+  imagePlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   favoriteButton: {
     position: "absolute",
     top: 7,
@@ -157,6 +279,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   addButton: {
     position: "absolute",
     right: 5,
@@ -171,10 +294,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     elevation: 4,
   },
+
   addButtonPressed: {
     backgroundColor: COLORS.primaryLight,
     transform: [{ scale: 0.9 }],
   },
+
   quantityContainer: {
     position: "absolute",
     right: 5,
@@ -191,12 +316,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     elevation: 4,
   },
+
   quantityButton: {
     width: 23,
     height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
+
   quantity: {
     minWidth: 18,
     textAlign: "center",
@@ -204,7 +331,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
-  details: { paddingTop: 16, paddingHorizontal: 3, paddingBottom: 2 },
+
+  details: {
+    paddingTop: 16,
+    paddingHorizontal: 3,
+    paddingBottom: 2,
+  },
+
   discountBadge: {
     alignSelf: "flex-start",
     backgroundColor: COLORS.primary,
@@ -213,30 +346,40 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     marginBottom: 4,
   },
+
   discountText: {
     color: COLORS.white,
     fontSize: 8,
     lineHeight: 10,
     fontWeight: "900",
   },
+
   priceRow: {
     flexDirection: "row",
     alignItems: "baseline",
     marginBottom: 2,
   },
-  price: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
+
+  price: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
   mrp: {
     color: COLORS.muted,
     fontSize: 8,
     textDecorationLine: "line-through",
     marginLeft: 4,
   },
+
   category: {
     color: COLORS.muted,
     fontSize: 8,
     fontWeight: "700",
     marginTop: 1,
   },
+
   name: {
     color: COLORS.text,
     fontSize: 11,
@@ -244,6 +387,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 1,
   },
+
   weight: {
     color: COLORS.primary,
     fontSize: 9,
@@ -251,11 +395,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 2,
   },
+
   deliveryRow: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 2,
   },
+
   delivery: {
     color: COLORS.textSecondary,
     fontSize: 8,

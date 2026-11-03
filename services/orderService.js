@@ -1,264 +1,274 @@
 
 import { apiRequest } from "./api";
-import { ORDER_STATUS_LABEL } from "../constants";
 
-/**
- * Convert backend order data into the
- * format used by the TWINTO app.
- */
-function normalizeOrder(o) {
-  if (!o) return null;
+/* =========================================
+   HELPERS
+========================================= */
 
-  const rawStatus = o.status || "PLACED";
+function requireOrderId(orderId) {
+  const id = Number(orderId);
 
-  const uiStatus =
-    ORDER_STATUS_LABEL[rawStatus] || rawStatus;
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error("Invalid order ID.");
+  }
+
+  return id;
+}
+
+function normalizeOrder(order) {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
 
   return {
-    id: o.id,
-    orderNumber: o.orderNumber,
-
-    status: uiStatus,
-    rawStatus,
-
-    paymentStatus: o.paymentStatus,
-    paymentMethod: o.paymentMethod,
-
-    itemTotal: Number(o.itemTotal) || 0,
-    platformFee: Number(o.platformFee) || 0,
-    deliveryFee: Number(o.deliveryPartnerFee) || 0,
-    discount: Number(o.discount) || 0,
-    tip: Number(o.tip) || 0,
-    total: Number(o.total) || 0,
-
-    date: o.createdAt
-      ? new Date(o.createdAt).toLocaleDateString(
-          "en-IN",
-          {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }
-        )
-      : "",
-
-    items: (o.items || []).map((it) => ({
-      id: it.productId ?? it.id,
-      productId: it.productId,
-
-      name: it.productName,
-      productName: it.productName,
-
-      image: it.productImage || null,
-      productImage: it.productImage,
-
-      price: Number(it.price) || 0,
-      quantity: Number(it.quantity) || 1,
-      subtotal: Number(it.subtotal) || 0,
-
-      weight: it.weight || "",
-    })),
-
-    address:
-      o.address ||
-      o.addressSnapshot ||
-      null,
-
-    history: o.history || [],
-    payments: o.payments || [],
-
-    deliveryPartner:
-      o.assignedPersonName ||
-      o.assignedPersonMobile
-        ? {
-            name:
-              o.assignedPersonName ||
-              "Delivery Partner",
-
-            phone:
-              o.assignedPersonMobile || "",
-          }
-        : null,
+    ...order,
+    id: order.id != null ? Number(order.id) : order.id,
+    total: Number(order.total || 0),
+    itemTotal: Number(order.itemTotal || 0),
+    platformFee: Number(order.platformFee || 0),
+    deliveryPartnerFee: Number(
+      order.deliveryPartnerFee || 0
+    ),
+    discount: Number(order.discount || 0),
+    tip: Number(order.tip || 0),
+    items: Array.isArray(order.items) ? order.items : [],
   };
 }
 
-/**
- * GET /api/v1/orders
- *
- * Fetch all customer orders.
- */
+function unwrapResponse(response) {
+  const body = response?.data ?? response;
+  return body?.data ?? body;
+}
+
+/* =========================================
+   NORMALIZE CASHFREE RESPONSE
+========================================= */
+
+function normalizeCashfree(data) {
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Cashfree payment details are missing."
+    );
+  }
+
+  const paymentSessionId =
+    data.paymentSessionId ||
+    data.payment_session_id ||
+    data.sessionId;
+
+  const cashfreeOrderId =
+    data.cashfreeOrderId ||
+    data.cashfree_order_id ||
+    data.orderId ||
+    data.cfOrderId;
+
+  const environment = String(
+    data.environment || ""
+  ).toLowerCase();
+
+  if (!paymentSessionId) {
+    throw new Error(
+      "Cashfree payment session ID is missing."
+    );
+  }
+
+  if (!cashfreeOrderId) {
+    throw new Error(
+      "Cashfree order ID is missing."
+    );
+  }
+
+  if (!["sandbox", "production"].includes(environment)) {
+    throw new Error(
+      "Invalid Cashfree environment returned by backend."
+    );
+  }
+
+  return {
+    paymentSessionId: String(paymentSessionId),
+    cashfreeOrderId: String(cashfreeOrderId),
+    environment,
+  };
+}
+
+/* =========================================
+   GET ALL ORDERS
+========================================= */
+
 export async function getOrders() {
-  const data = await apiRequest("/orders");
+  const response = await apiRequest("/orders");
+
+  const data = unwrapResponse(response);
 
   const orders = Array.isArray(data)
     ? data
-    : Array.isArray(data?.orders)
-      ? data.orders
-      : [];
+    : data?.orders || data?.rows || [];
 
-  return orders.map(normalizeOrder);
+  return orders.map(normalizeOrder).filter(Boolean);
 }
 
-/**
- * GET /api/v1/orders/:id
- *
- * Fetch a single order.
- */
-export async function getOrder(id) {
-  if (
-    id === undefined ||
-    id === null ||
-    id === ""
-  ) {
-    throw new Error("Order ID is required.");
-  }
+/* =========================================
+   GET SINGLE ORDER
+========================================= */
 
-  const data = await apiRequest(
-    `/orders/${encodeURIComponent(String(id))}`
-  );
+export async function getOrder(orderId) {
+  const id = requireOrderId(orderId);
+
+  const response = await apiRequest(`/orders/${id}`);
+
+  const data = unwrapResponse(response);
 
   return normalizeOrder(data?.order || data);
 }
 
-/**
- * POST /api/v1/orders
- *
- * Create a COD or Cashfree order.
- *
- * COD:
- *   paymentMethod: "COD"
- *
- * Cashfree:
- *   paymentMethod: "CASHFREE"
- *
- * Expected Cashfree backend response:
- *
- * {
- *   order: {...},
- *   cashfree: {
- *     paymentSessionId: "...",
- *     checkoutUrl: "https://...",
- *     environment: "sandbox"
- *   }
- * }
- */
+/* =========================================
+   CREATE ORDER
+========================================= */
+
 export async function createOrder(payload) {
-  if (
-    !payload ||
-    typeof payload !== "object" ||
-    Array.isArray(payload)
-  ) {
-    throw new Error(
-      "Valid order details are required."
-    );
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Order details are required.");
+  }
+
+  if (!payload.addressId) {
+    throw new Error("Please select a delivery address.");
   }
 
   const paymentMethod = String(
     payload.paymentMethod || "COD"
   ).toUpperCase();
 
-  if (
-    paymentMethod !== "COD" &&
-    paymentMethod !== "CASHFREE"
-  ) {
-    throw new Error(
-      "Unsupported payment method."
-    );
+  if (!["COD", "CASHFREE"].includes(paymentMethod)) {
+    throw new Error("Invalid payment method.");
   }
 
-  const data = await apiRequest("/orders", {
+  const response = await apiRequest("/orders", {
     method: "POST",
-
     body: JSON.stringify({
       ...payload,
       paymentMethod,
     }),
   });
 
-  if (!data) {
-    throw new Error(
-      "Invalid response from order server."
-    );
-  }
+  const data = unwrapResponse(response);
 
-  const orderData = data.order || data;
-
-  const order = normalizeOrder(orderData);
+  const order = normalizeOrder(data?.order || data);
 
   if (!order?.id) {
     throw new Error(
-      "Order created but order ID was not returned."
+      data?.message ||
+      "Order response did not include a valid order ID."
     );
   }
 
-  /**
-   * Cashfree details are returned under
-   * the "cashfree" object by the backend.
-   */
-  const cashfree = data.cashfree || null;
+  let cashfree = null;
+  let retryRequired = Boolean(data?.retryRequired);
 
-  const paymentSessionId =
-    cashfree?.paymentSessionId ||
-    cashfree?.payment_session_id ||
-    null;
+  if (paymentMethod === "CASHFREE" && data?.cashfree) {
+    cashfree = normalizeCashfree(data.cashfree);
+  } else if (paymentMethod === "CASHFREE") {
+    retryRequired = true;
+  }
 
-  const checkoutUrl =
-    cashfree?.checkoutUrl ||
-    null;
-
-  const environment =
-    cashfree?.environment ||
-    null;
-
-  /**
-   * Do not create another order if Cashfree
-   * session details are missing.
-   *
-   * The backend may have already saved
-   * this order.
-   */
   return {
     order,
-
     paymentMethod,
-
     cashfree,
+    checkoutUrl: null,
 
-    paymentSessionId,
-    checkoutUrl,
-    environment,
+    paymentSessionId:
+      cashfree?.paymentSessionId || null,
 
-    requiresPayment:
-      paymentMethod === "CASHFREE",
+    cashfreeOrderId:
+      cashfree?.cashfreeOrderId || null,
 
-    paymentReady:
-      paymentMethod === "CASHFREE" &&
-      Boolean(checkoutUrl),
+    environment:
+      cashfree?.environment || null,
+
+    requiresPayment: paymentMethod === "CASHFREE",
+
+    paymentReady: Boolean(cashfree),
+    retryRequired,
 
     rawResponse: data,
   };
 }
 
-/**
- * PATCH /api/v1/orders/:id/cancel
- *
- * Cancel an order.
- */
-export async function cancelOrder(id) {
-  if (
-    id === undefined ||
-    id === null ||
-    id === ""
-  ) {
-    throw new Error("Order ID is required.");
-  }
+/* =========================================
+   RETRY CASHFREE PAYMENT
+   POST /orders/:id/retry-payment
+========================================= */
 
-  const data = await apiRequest(
-    `/orders/${encodeURIComponent(String(id))}/cancel`,
+export async function retryCashfreePayment(orderId) {
+  const id = requireOrderId(orderId);
+
+  const response = await apiRequest(
+    `/orders/${id}/retry-payment`,
     {
-      method: "PATCH",
+      method: "POST",
+      body: JSON.stringify({}),
     }
   );
+
+  const data = unwrapResponse(response);
+
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Invalid payment response from backend."
+    );
+  }
+
+  const paymentStatus = String(
+    data.paymentStatus ||
+    data.order?.paymentStatus ||
+    ""
+  ).toUpperCase();
+
+  if (
+    paymentStatus === "PAID" ||
+    data.isPaid === true
+  ) {
+    return {
+      order: normalizeOrder(data.order),
+      orderId: id,
+      paymentStatus: "PAID",
+      isPaid: true,
+      cashfree: null,
+      rawResponse: data,
+    };
+  }
+
+  const cashfree = normalizeCashfree(data.cashfree);
+
+  return {
+    order: normalizeOrder(data.order),
+    orderId: id,
+    paymentStatus: paymentStatus || "PENDING",
+    isPaid: false,
+    cashfree,
+    paymentSessionId: cashfree.paymentSessionId,
+    cashfreeOrderId: cashfree.cashfreeOrderId,
+    environment: cashfree.environment,
+    rawResponse: data,
+  };
+}
+
+/* =========================================
+   CANCEL ORDER
+========================================= */
+
+export async function cancelOrder(orderId) {
+  const id = requireOrderId(orderId);
+
+  const response = await apiRequest(
+    `/orders/${id}/cancel`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({}),
+    }
+  );
+
+  const data = unwrapResponse(response);
 
   return normalizeOrder(data?.order || data);
 }
