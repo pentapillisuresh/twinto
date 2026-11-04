@@ -11,12 +11,6 @@ import {
 } from "react";
 
 import {
-  DELIVERY_PARTNER_FEE,
-  FREE_DELIVERY_MAX_ITEMS,
-  PLATFORM_FEE,
-} from "../constants";
-
-import {
   setToken,
   getToken,
   clearToken,
@@ -30,6 +24,17 @@ import { getMe } from "../services/authService";
 
 const USER_KEY = "twinto_user";
 const CART_KEY = "twinto_cart";
+const LOCATION_STORAGE_KEY = "twinto_selected_location";
+
+// Fallback values only when no location fee data
+// is available. The backend remains authoritative.
+const DEFAULT_LOCATION_FEES = {
+  platformFee: 5,
+  minimumOrder: 5,
+  deliveryCharge: 30,
+  freeDeliveryEnabled: true,
+  freeDeliveryMaxItems: 3,
+};
 
 // ==========================================
 // CONTEXTS
@@ -339,13 +344,80 @@ export function useAuth() {
 
 export function LocationProvider({ children }) {
   const [location, setLocation] = useState(null);
+  const [locationLoaded, setLocationLoaded] = useState(false);
+
+  // ========================================
+  // RESTORE SELECTED LOCATION
+  // ========================================
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function restoreLocation() {
+      try {
+        const savedLocation = await AsyncStorage.getItem(
+          LOCATION_STORAGE_KEY
+        );
+
+        if (savedLocation && mounted) {
+          const parsedLocation = JSON.parse(savedLocation);
+
+          if (
+            parsedLocation &&
+            typeof parsedLocation === "object" &&
+            parsedLocation.id != null
+          ) {
+            setLocation(parsedLocation);
+          }
+        }
+      } catch (error) {
+        console.log(
+          "[LOCATION] Restore error:",
+          error?.message
+        );
+      } finally {
+        if (mounted) {
+          setLocationLoaded(true);
+        }
+      }
+    }
+
+    restoreLocation();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ========================================
+  // SAVE SELECTED LOCATION
+  // ========================================
+
+  async function updateLocation(selectedLocation) {
+    if (
+      !selectedLocation ||
+      selectedLocation.id == null
+    ) {
+      throw new Error("Invalid delivery location.");
+    }
+
+    await AsyncStorage.setItem(
+      LOCATION_STORAGE_KEY,
+      JSON.stringify(selectedLocation)
+    );
+
+    setLocation(selectedLocation);
+
+    return selectedLocation;
+  }
 
   const value = useMemo(
     () => ({
       location,
-      setLocation,
+      setLocation: updateLocation,
+      locationLoaded,
     }),
-    [location]
+    [location, locationLoaded]
   );
 
   return (
@@ -373,9 +445,12 @@ export function useLocation() {
 
 export function CartProvider({ children }) {
   const [cart, setCart] = useState([]);
-  const [tip, setTip] = useState(10);
+  const [tip, setTip] = useState();
 
   const [cartLoaded, setCartLoaded] = useState(false);
+
+  // Read the currently selected location.
+  const { location, locationLoaded } = useLocation();
 
   // ========================================
   // LOAD SAVED CART
@@ -547,19 +622,65 @@ export function CartProvider({ children }) {
     );
   }, [cart]);
 
+  // ========================================
+  // LOCATION-BASED FEE SETTINGS
+  // ========================================
+
+  const locationFees = useMemo(() => {
+    return {
+      platformFee: Number(
+        location?.platformFee ??
+          DEFAULT_LOCATION_FEES.platformFee
+      ),
+
+      minimumOrder: Number(
+        location?.minimumOrder ??
+          DEFAULT_LOCATION_FEES.minimumOrder
+      ),
+
+      deliveryCharge: Number(
+        location?.deliveryCharge ??
+          DEFAULT_LOCATION_FEES.deliveryCharge
+      ),
+
+      freeDeliveryEnabled:
+        location?.freeDeliveryEnabled ??
+        DEFAULT_LOCATION_FEES.freeDeliveryEnabled,
+
+      freeDeliveryMaxItems: Number(
+        location?.freeDeliveryMaxItems ??
+          DEFAULT_LOCATION_FEES.freeDeliveryMaxItems
+      ),
+    };
+  }, [location]);
+
+  const isFreeDeliveryEnabled =
+    locationFees.freeDeliveryEnabled === true ||
+    locationFees.freeDeliveryEnabled === 1 ||
+    locationFees.freeDeliveryEnabled === "1" ||
+    locationFees.freeDeliveryEnabled === "true";
+
+  // Free delivery is based on total quantity,
+  // not the number of different products.
   const freeDelivery =
+    isFreeDeliveryEnabled &&
     itemCount > 0 &&
-    itemCount <= FREE_DELIVERY_MAX_ITEMS;
+    itemCount <= locationFees.freeDeliveryMaxItems;
 
   const deliveryFee =
-    itemCount === 0 || freeDelivery
+    itemCount === 0
       ? 0
-      : DELIVERY_PARTNER_FEE;
+      : freeDelivery
+        ? 0
+        : locationFees.deliveryCharge;
+
+  const platformFee = locationFees.platformFee;
+  const minimumOrder = locationFees.minimumOrder;
 
   // Keep the original TWINTO total formula.
   const total =
     itemTotal +
-    PLATFORM_FEE +
+    platformFee +
     deliveryFee +
     tip;
 
@@ -578,7 +699,11 @@ export function CartProvider({ children }) {
     itemTotal,
     freeDelivery,
     deliveryFee,
-    platformFee: PLATFORM_FEE,
+    platformFee,
+    minimumOrder,
+    location,
+    locationFees,
+    locationLoaded,
     tip,
     setTip,
     total,

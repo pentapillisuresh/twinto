@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+
+import { useState, useCallback, useMemo } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -13,7 +14,6 @@ import {
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
 
 import AppHeader from "../../components/common/AppHeader";
 import AddressCard from "../../components/checkout/AddressCard";
@@ -26,16 +26,20 @@ import { getAddresses } from "../../services/addressService";
 
 export default function Checkout() {
   const insets = useSafeAreaInsets();
+
   const {
-    cart,
-    itemCount,
-    itemTotal,
-    freeDelivery,
-    deliveryFee,
-    platformFee,
-    tip,
+    cart = [],
+    itemCount = 0,
+    itemTotal = 0,
+    freeDelivery = false,
+    deliveryFee = 0,
+    platformFee = 0,
+    minimumOrder = 0,
+    freeDeliveryMaxItems = 3,
+    tip = 0,
     setTip,
-    total,
+    total = 0,
+    locationFees,
   } = useCart();
 
   const [addresses, setAddresses] = useState([]);
@@ -43,23 +47,65 @@ export default function Checkout() {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
+
       (async () => {
         try {
           setLoading(true);
+
           const list = await getAddresses();
-          setAddresses(list);
+
+          if (active) {
+            setAddresses(Array.isArray(list) ? list : []);
+          }
         } catch (e) {
           console.log("Address load error:", e);
         } finally {
-          setLoading(false);
+          if (active) {
+            setLoading(false);
+          }
         }
       })();
+
+      return () => {
+        active = false;
+      };
     }, [])
   );
 
+  // Preserve existing address selection behavior.
   const address = addresses[0];
 
-  if (cart.length === 0) {
+  // Use the selected address's location ID for fee matching.
+  const addressLocationId =
+    address?.locationId ??
+    address?.location?.id ??
+    null;
+
+  const selectedLocationId =
+    locationFees?.locationId ??
+    locationFees?.id ??
+    null;
+
+  const locationMatchesAddress =
+    !addressLocationId ||
+    !selectedLocationId ||
+    String(addressLocationId) === String(selectedLocationId);
+
+  const displayedPlatformFee = platformFee;
+  const displayedDeliveryFee = deliveryFee;
+
+  const minimumOrderRemaining = Math.max(
+    0,
+    Number(minimumOrder || 0) - Number(itemTotal || 0)
+  );
+
+  const isMinimumOrderMet =
+    Number(itemTotal || 0) >= Number(minimumOrder || 0);
+
+  const hasItems = cart.length > 0;
+
+  if (!hasItems) {
     return (
       <SafeAreaView
         style={styles.container}
@@ -73,10 +119,15 @@ export default function Checkout() {
               color={COLORS.primary}
             />
           </View>
-          <Text style={styles.emptyTitle}>Your cart is empty</Text>
+
+          <Text style={styles.emptyTitle}>
+            Your cart is empty
+          </Text>
+
           <Text style={styles.emptySubtitle}>
             Add some products before continuing to checkout.
           </Text>
+
           <Pressable
             onPress={() => router.replace("/(tabs)")}
             style={styles.emptyButton}
@@ -84,6 +135,7 @@ export default function Checkout() {
             <Text style={styles.emptyButtonText}>
               Continue Shopping
             </Text>
+
             <Ionicons
               name="arrow-forward"
               size={18}
@@ -110,6 +162,7 @@ export default function Checkout() {
         ]}
       >
         {/* DELIVERY */}
+
         <View style={styles.deliveryCard}>
           <View style={styles.deliveryIcon}>
             <Ionicons
@@ -118,21 +171,26 @@ export default function Checkout() {
               color={COLORS.primary}
             />
           </View>
+
           <View style={styles.deliveryInfo}>
             <View style={styles.deliveryTitleRow}>
               <Text style={styles.deliveryTitle}>
                 Delivery in 17–20 mins
               </Text>
+
               <View style={styles.fastBadge}>
                 <View style={styles.fastDot} />
                 <Text style={styles.fastText}>FAST</Text>
               </View>
             </View>
+
             <Text style={styles.deliverySubtitle}>
               Your order will be delivered quickly.
             </Text>
           </View>
         </View>
+
+        {/* FREE DELIVERY */}
 
         <FreeDeliveryBanner
           itemCount={itemCount}
@@ -140,11 +198,13 @@ export default function Checkout() {
         />
 
         {/* ADDRESS */}
+
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleWrap}>
             <Text style={styles.sectionTitle}>
               Delivery Address
             </Text>
+
             <Text style={styles.sectionSubtitle}>
               Where should we deliver your order?
             </Text>
@@ -167,25 +227,85 @@ export default function Checkout() {
         ) : (
           <Pressable
             style={styles.noAddress}
-            onPress={() =>
-              router.push("/checkout/add-address")
-            }
+            onPress={() => router.push("/checkout/add-address")}
           >
             <Ionicons
               name="add-circle-outline"
               size={22}
               color={COLORS.primary}
             />
+
             <Text style={styles.noAddressText}>
               Add a delivery address
             </Text>
           </Pressable>
         )}
 
+        {/* LOCATION / MINIMUM ORDER */}
+
+        {address && (
+          <>
+            {!locationMatchesAddress && (
+              <View style={styles.locationWarning}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={19}
+                  color="#B45309"
+                />
+
+                <Text style={styles.locationWarningText}>
+                  Your selected delivery address belongs to a
+                  different location. Please verify the address
+                  before placing your order.
+                </Text>
+              </View>
+            )}
+
+            {Number(minimumOrder) > 0 && (
+              <View style={styles.minimumOrderCard}>
+                <View style={styles.minimumOrderIcon}>
+                  <Ionicons
+                    name={
+                      isMinimumOrderMet
+                        ? "checkmark-circle"
+                        : "information-circle-outline"
+                    }
+                    size={20}
+                    color={
+                      isMinimumOrderMet
+                        ? "#15803D"
+                        : COLORS.primary
+                    }
+                  />
+                </View>
+
+                <View style={styles.minimumOrderContent}>
+                  <Text style={styles.minimumOrderTitle}>
+                    Minimum Order: ₹
+                    {Number(minimumOrder).toFixed(2)}
+                  </Text>
+
+                  <Text style={styles.minimumOrderSubtitle}>
+                    {isMinimumOrderMet
+                      ? "Minimum order amount reached."
+                      : `Add ₹${minimumOrderRemaining.toFixed(
+                          2
+                        )} more to continue.`}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </>
+        )}
+
         {/* PAYMENT */}
+
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleWrap}>
-            <Text style={styles.sectionTitle}>Payment</Text>
+            <Text style={styles.sectionTitle}>
+              Payment
+            </Text>
+
             <Text style={styles.sectionSubtitle}>
               Select payment method on next step
             </Text>
@@ -206,14 +326,17 @@ export default function Checkout() {
               color={COLORS.primary}
             />
           </View>
+
           <View style={styles.paymentContent}>
             <Text style={styles.paymentTitle}>
               Choose payment method
             </Text>
+
             <Text style={styles.paymentSubtitle}>
               Cash on Delivery available now
             </Text>
           </View>
+
           <View style={styles.chevronBox}>
             <Ionicons
               name="chevron-forward"
@@ -223,17 +346,24 @@ export default function Checkout() {
           </View>
         </Pressable>
 
+        {/* TIP */}
+
         <TipSelector tip={tip} setTip={setTip} />
 
         {/* BILL */}
+
         <View style={styles.billSection}>
           <View style={styles.billHeader}>
             <View>
-              <Text style={styles.billTitle}>Bill Details</Text>
+              <Text style={styles.billTitle}>
+                Bill Details
+              </Text>
+
               <Text style={styles.billSubtitle}>
                 Final amount for your order
               </Text>
             </View>
+
             <View style={styles.billIcon}>
               <Ionicons
                 name="receipt-outline"
@@ -242,15 +372,18 @@ export default function Checkout() {
               />
             </View>
           </View>
+
           <BillDetails
             itemTotal={itemTotal}
-            platformFee={platformFee}
-            deliveryFee={deliveryFee}
+            platformFee={displayedPlatformFee}
+            deliveryFee={displayedDeliveryFee}
             tip={tip}
             total={total}
           />
         </View>
       </ScrollView>
+
+      {/* BOTTOM BAR */}
 
       <View
         style={[
@@ -259,9 +392,15 @@ export default function Checkout() {
         ]}
       >
         <View style={styles.bottomTotal}>
-          <Text style={styles.totalLabel}>Total to Pay</Text>
-          <Text style={styles.total}>₹{total.toFixed(2)}</Text>
+          <Text style={styles.totalLabel}>
+            Total to Pay
+          </Text>
+
+          <Text style={styles.total}>
+            ₹{total.toFixed(2)}
+          </Text>
         </View>
+
         <Pressable
           onPress={() => router.push("/checkout/payment")}
           style={({ pressed }) => [
@@ -269,7 +408,10 @@ export default function Checkout() {
             pressed && styles.continuePressed,
           ]}
         >
-          <Text style={styles.continueText}>Continue</Text>
+          <Text style={styles.continueText}>
+            Continue
+          </Text>
+
           <View style={styles.arrowCircle}>
             <Ionicons
               name="arrow-forward"
@@ -284,8 +426,15 @@ export default function Checkout() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { paddingTop: 2 },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+
+  scroll: {
+    paddingTop: 2,
+  },
+
   deliveryCard: {
     marginHorizontal: 16,
     marginTop: 14,
@@ -299,6 +448,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+
   deliveryIcon: {
     width: 45,
     height: 45,
@@ -307,22 +457,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deliveryInfo: { flex: 1, marginLeft: 12 },
+
+  deliveryInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
   deliveryTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
   },
+
   deliveryTitle: {
     color: COLORS.text,
     fontSize: 13,
     fontWeight: "900",
   },
+
   deliverySubtitle: {
     marginTop: 5,
     color: COLORS.muted,
     fontSize: 10,
   },
+
   fastBadge: {
     marginLeft: 7,
     paddingHorizontal: 7,
@@ -332,6 +490,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+
   fastDot: {
     width: 5,
     height: 5,
@@ -339,28 +498,40 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     marginRight: 4,
   },
+
   fastText: {
     color: COLORS.primary,
     fontSize: 7,
     fontWeight: "900",
   },
+
   sectionHeader: {
     marginHorizontal: 16,
     marginTop: 23,
     marginBottom: 11,
   },
-  sectionTitleWrap: { paddingLeft: 1 },
+
+  sectionTitleWrap: {
+    paddingLeft: 1,
+  },
+
   sectionTitle: {
     color: COLORS.text,
     fontSize: 17,
     fontWeight: "900",
   },
+
   sectionSubtitle: {
     marginTop: 4,
     color: COLORS.muted,
     fontSize: 10.5,
   },
-  addressLoading: { padding: 20, alignItems: "center" },
+
+  addressLoading: {
+    padding: 20,
+    alignItems: "center",
+  },
+
   noAddress: {
     marginHorizontal: 16,
     padding: 16,
@@ -372,12 +543,73 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   noAddressText: {
     color: COLORS.primary,
     fontWeight: "900",
     fontSize: 13,
     marginLeft: 8,
   },
+
+  locationWarning: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 13,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+
+  locationWarningText: {
+    flex: 1,
+    color: "#92400E",
+    fontSize: 11,
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+
+  minimumOrderCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 13,
+    borderRadius: 15,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: "#EEDFE5",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  minimumOrderIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 11,
+    backgroundColor: "#FFF0F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  minimumOrderContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  minimumOrderTitle: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  minimumOrderSubtitle: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+
   paymentCard: {
     marginHorizontal: 16,
     minHeight: 70,
@@ -390,6 +622,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+
   paymentIcon: {
     width: 43,
     height: 43,
@@ -398,13 +631,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  paymentContent: { flex: 1, marginLeft: 11, marginRight: 8 },
+
+  paymentContent: {
+    flex: 1,
+    marginLeft: 11,
+    marginRight: 8,
+  },
+
   paymentTitle: {
     color: COLORS.text,
     fontSize: 12.5,
     fontWeight: "900",
   },
-  paymentSubtitle: { marginTop: 4, color: COLORS.muted, fontSize: 10 },
+
+  paymentSubtitle: {
+    marginTop: 4,
+    color: COLORS.muted,
+    fontSize: 10,
+  },
+
   chevronBox: {
     width: 29,
     height: 29,
@@ -413,7 +658,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
+
+  pressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.99 }],
+  },
+
   billSection: {
     marginHorizontal: 16,
     marginTop: 24,
@@ -423,22 +673,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EEDFE5",
   },
+
   billHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 7,
   },
+
   billTitle: {
     color: COLORS.text,
     fontSize: 15,
     fontWeight: "900",
   },
+
   billSubtitle: {
     marginTop: 3,
     color: COLORS.muted,
     fontSize: 9.5,
   },
+
   billIcon: {
     width: 36,
     height: 36,
@@ -447,6 +701,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   bottom: {
     position: "absolute",
     left: 0,
@@ -463,18 +718,24 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     elevation: 10,
   },
-  bottomTotal: { flex: 1 },
+
+  bottomTotal: {
+    flex: 1,
+  },
+
   totalLabel: {
     color: COLORS.muted,
     fontSize: 10,
     fontWeight: "700",
   },
+
   total: {
     marginTop: 2,
     color: COLORS.text,
     fontSize: 21,
     fontWeight: "900",
   },
+
   continue: {
     minWidth: 145,
     height: 50,
@@ -486,13 +747,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  continuePressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+
+  continuePressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+
   continueText: {
     color: COLORS.white,
     fontSize: 14,
     fontWeight: "900",
     marginRight: 10,
   },
+
   arrowCircle: {
     width: 36,
     height: 36,
@@ -501,12 +768,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   empty: {
     flex: 1,
     paddingHorizontal: 30,
     justifyContent: "center",
     alignItems: "center",
   },
+
   emptyIcon: {
     width: 76,
     height: 76,
@@ -516,12 +785,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 18,
   },
+
   emptyTitle: {
     color: COLORS.text,
     fontSize: 22,
     fontWeight: "900",
     textAlign: "center",
   },
+
   emptySubtitle: {
     color: COLORS.muted,
     fontSize: 12,
@@ -530,6 +801,7 @@ const styles = StyleSheet.create({
     marginTop: 7,
     maxWidth: 280,
   },
+
   emptyButton: {
     marginTop: 22,
     minWidth: 190,
@@ -541,6 +813,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   emptyButtonText: {
     color: COLORS.white,
     fontSize: 13,

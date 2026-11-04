@@ -27,6 +27,7 @@ export default function Cart() {
     platformFee = 0,
     deliveryFee = 0,
     freeDelivery = false,
+    freeDeliveryMaxItems = 3,
     tip = 0,
     setTip,
     total = 0,
@@ -54,8 +55,7 @@ export default function Cart() {
       if (item.product) {
         return {
           ...item.product,
-          quantity:
-            Number(item.quantity) || 1,
+          quantity: Number(item.quantity) || 1,
         };
       }
 
@@ -78,10 +78,10 @@ export default function Cart() {
    * =====================================================
    */
 
- function getImageSource(image) {
-  if (!image) return null;
-  return { uri: image };
-}
+  function getImageSource(image) {
+    if (!image) return null;
+    return { uri: image };
+  }
 
   /*
    * =====================================================
@@ -90,9 +90,7 @@ export default function Cart() {
    */
 
   function goToCheckout() {
-    if (
-      normalizedCart.length === 0
-    ) {
+    if (normalizedCart.length === 0) {
       return;
     }
 
@@ -105,9 +103,7 @@ export default function Cart() {
    * =====================================================
    */
 
-  if (
-    normalizedCart.length === 0
-  ) {
+  if (normalizedCart.length === 0) {
     return (
       <SafeAreaView
         style={styles.safeArea}
@@ -116,29 +112,19 @@ export default function Cart() {
         {/* HEADER */}
 
         <View style={styles.header}>
-          <View
-            style={styles.headerSide}
-          />
+          <View style={styles.headerSide} />
 
-          <Text
-            style={styles.headerTitle}
-          >
+          <Text style={styles.headerTitle}>
             My Cart
           </Text>
 
-          <View
-            style={styles.headerSide}
-          />
+          <View style={styles.headerSide} />
         </View>
 
         {/* EMPTY */}
 
-        <View
-          style={styles.emptyContainer}
-        >
-          <View
-            style={styles.emptyIcon}
-          >
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIcon}>
             <Ionicons
               name="cart-outline"
               size={52}
@@ -146,15 +132,11 @@ export default function Cart() {
             />
           </View>
 
-          <Text
-            style={styles.emptyTitle}
-          >
+          <Text style={styles.emptyTitle}>
             Your cart is empty
           </Text>
 
-          <Text
-            style={styles.emptySubtitle}
-          >
+          <Text style={styles.emptySubtitle}>
             Add some fresh groceries
             and daily essentials to
             your cart.
@@ -163,14 +145,10 @@ export default function Cart() {
           <Pressable
             style={styles.shopButton}
             onPress={() =>
-              router.push(
-                "/(tabs)"
-              )
+              router.push("/(tabs)")
             }
           >
-            <Text
-              style={styles.shopButtonText}
-            >
+            <Text style={styles.shopButtonText}>
               START SHOPPING
             </Text>
 
@@ -199,9 +177,7 @@ export default function Cart() {
       {/* HEADER */}
 
       <View style={styles.header}>
-        <Text
-          style={styles.headerTitle}
-        >
+        <Text style={styles.headerTitle}>
           My Cart
         </Text>
 
@@ -209,45 +185,27 @@ export default function Cart() {
           onPress={clear}
           hitSlop={10}
         >
-          <Text
-            style={styles.clearText}
-          >
+          <Text style={styles.clearText}>
             Clear
           </Text>
         </Pressable>
       </View>
 
       <ScrollView
-        showsVerticalScrollIndicator={
-          false
-        }
-        contentContainerStyle={
-          styles.content
-        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
       >
         {/* ITEM COUNT */}
 
-        <View
-          style={styles.itemCountRow}
-        >
+        <View style={styles.itemCountRow}>
           <View>
-            <Text
-              style={
-                styles.itemCountTitle
-              }
-            >
+            <Text style={styles.itemCountTitle}>
               {itemCount}{" "}
-              {itemCount === 1
-                ? "item"
-                : "items"}{" "}
+              {itemCount === 1 ? "item" : "items"}{" "}
               in your cart
             </Text>
 
-            <Text
-              style={
-                styles.itemCountSubtitle
-              }
-            >
+            <Text style={styles.itemCountSubtitle}>
               Fresh groceries
               delivered to your
               doorstep
@@ -264,14 +222,8 @@ export default function Cart() {
         {/* FREE DELIVERY */}
 
         {freeDelivery && (
-          <View
-            style={
-              styles.freeDeliveryCard
-            }
-          >
-            <View
-              style={styles.freeIcon}
-            >
+          <View style={styles.freeDeliveryCard}>
+            <View style={styles.freeIcon}>
               <Ionicons
                 name="bicycle-outline"
                 size={21}
@@ -279,21 +231,14 @@ export default function Cart() {
               />
             </View>
 
-            <View
-              style={styles.freeContent}
-            >
-              <Text
-                style={styles.freeTitle}
-              >
+            <View style={styles.freeContent}>
+              <Text style={styles.freeTitle}>
                 FREE DELIVERY
               </Text>
 
-              <Text
-                style={
-                  styles.freeSubtitle
-                }
-              >
-                ORDER UPTO 3 ITEMS
+              <Text style={styles.freeSubtitle}>
+                ORDER UP TO {freeDeliveryMaxItems} ITEMS
+                {"\n"}
                 FOR FREE DELIVERY
               </Text>
             </View>
@@ -309,343 +254,224 @@ export default function Cart() {
         {/* CART ITEMS */}
 
         <View style={styles.section}>
-          {normalizedCart.map(
-            (item, index) => {
-              const quantity =
-                Number(
-                  item.quantity
-                ) || 1;
+          {normalizedCart.map((item, index) => {
+            const quantity =
+              Number(item.quantity) || 1;
 
-              const imageSource =
-                getImageSource(
-                  item.image
-                );
+            const imageSource =
+              getImageSource(item.image);
 
-              return (
-                <View
-                  key={String(
-                    item.id
-                  )}
-                  style={[
-                    styles.productRow,
-                    index !==
-                      normalizedCart.length -
-                        1 &&
-                      styles.productBorder,
-                  ]}
+            return (
+              <View
+                key={String(item.id)}
+                style={[
+                  styles.productRow,
+                  index !== normalizedCart.length - 1 &&
+                    styles.productBorder,
+                ]}
+              >
+                {/* IMAGE */}
+
+                <Pressable
+                  style={styles.imageBox}
+                  onPress={() =>
+                    router.push(`/product/${item.id}`)
+                  }
                 >
-                  {/* IMAGE */}
+                  {imageSource ? (
+                    <Image
+                      source={imageSource}
+                      style={styles.productImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Ionicons
+                      name="image-outline"
+                      size={30}
+                      color={COLORS.muted}
+                    />
+                  )}
+                </Pressable>
 
-                  <Pressable
-                    style={
-                      styles.imageBox
-                    }
-                    onPress={() =>
-                      router.push(
-                        `/product/${item.id}`
-                      )
-                    }
+                {/* INFO */}
+
+                <View style={styles.productInfo}>
+                  <Text
+                    style={styles.productName}
+                    numberOfLines={2}
                   >
-                    {imageSource ? (
-                      <Image
-                        source={
-                          imageSource
-                        }
-                        style={
-                          styles.productImage
-                        }
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Ionicons
-                        name="image-outline"
-                        size={30}
-                        color={
-                          COLORS.muted
-                        }
-                      />
-                    )}
-                  </Pressable>
+                    {item.name}
+                  </Text>
 
-                  {/* INFO */}
+                  <Text style={styles.weight}>
+                    {item.weight}
+                  </Text>
 
-                  <View
-                    style={
-                      styles.productInfo
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.productName
-                      }
-                      numberOfLines={2}
-                    >
-                      {item.name}
+                  {/* PRICE */}
+
+                  <View style={styles.priceRow}>
+                    <Text style={styles.price}>
+                      ₹
+                      {Number(item.price || 0).toFixed(0)}
                     </Text>
 
-                    <Text
-                      style={
-                        styles.weight
-                      }
-                    >
-                      {item.weight}
-                    </Text>
-
-                    {/* PRICE */}
-
-                    <View
-                      style={
-                        styles.priceRow
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.price
-                        }
-                      >
-                        ₹
-                        {Number(
-                          item.price || 0
-                        ).toFixed(0)}
-                      </Text>
-
-                      {item.mrp &&
-                        item.mrp >
-                          item.price && (
-                          <Text
-                            style={
-                              styles.mrp
-                            }
-                          >
-                            ₹
-                            {Number(
-                              item.mrp
-                            ).toFixed(0)}
-                          </Text>
-                        )}
-                    </View>
-
-                    {/* QUANTITY */}
-
-                    <View
-                      style={
-                        styles.quantityContainer
-                      }
-                    >
-                      <Pressable
-                        style={
-                          styles.quantityButton
-                        }
-                        onPress={() =>
-                          decrease(
-                            item.id
-                          )
-                        }
-                      >
-                        <Ionicons
-                          name="remove"
-                          size={16}
-                          color={
-                            COLORS.primary
-                          }
-                        />
-                      </Pressable>
-
-                      <Text
-                        style={
-                          styles.quantityText
-                        }
-                      >
-                        {quantity}
-                      </Text>
-
-                      <Pressable
-                        style={
-                          styles.quantityButton
-                        }
-                        onPress={() =>
-                          increase(
-                            item.id
-                          )
-                        }
-                      >
-                        <Ionicons
-                          name="add"
-                          size={16}
-                          color={
-                            COLORS.primary
-                          }
-                        />
-                      </Pressable>
-                    </View>
+                    {item.mrp &&
+                      item.mrp > item.price && (
+                        <Text style={styles.mrp}>
+                          ₹
+                          {Number(item.mrp).toFixed(0)}
+                        </Text>
+                      )}
                   </View>
 
-                  {/* TOTAL */}
+                  {/* QUANTITY */}
 
-                  <Text
-                    style={
-                      styles.itemTotal
-                    }
-                  >
-                    ₹
-                    {Number(
-                      item.price || 0
-                    ) * quantity}
-                  </Text>
+                  <View style={styles.quantityContainer}>
+                    <Pressable
+                      style={styles.quantityButton}
+                      onPress={() => decrease(item.id)}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={16}
+                        color={COLORS.primary}
+                      />
+                    </Pressable>
+
+                    <Text style={styles.quantityText}>
+                      {quantity}
+                    </Text>
+
+                    <Pressable
+                      style={styles.quantityButton}
+                      onPress={() => increase(item.id)}
+                    >
+                      <Ionicons
+                        name="add"
+                        size={16}
+                        color={COLORS.primary}
+                      />
+                    </Pressable>
+                  </View>
                 </View>
-              );
-            }
-          )}
+
+                {/* TOTAL */}
+
+                <Text style={styles.itemTotal}>
+                  ₹
+                  {Number(item.price || 0) * quantity}
+                </Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* TIP */}
 
         <View style={styles.section}>
-          <Text
-            style={styles.sectionTitle}
-          >
+          <Text style={styles.sectionTitle}>
             Add a tip for your
             delivery partner
           </Text>
 
-          <Text
-            style={
-              styles.sectionSubtitle
-            }
-          >
+          <Text style={styles.sectionSubtitle}>
             100% of your tip goes to
             the delivery partner.
           </Text>
 
           <View style={styles.tipRow}>
-            {[0, 10, 20, 30].map(
-              (amount) => {
-                const selected =
-                  tip === amount;
+            {[0, 10, 20, 30].map((amount) => {
+              const selected = tip === amount;
 
-                return (
-                  <Pressable
-                    key={amount}
+              return (
+                <Pressable
+                  key={amount}
+                  style={[
+                    styles.tipButton,
+                    selected && styles.tipButtonSelected,
+                  ]}
+                  onPress={() => setTip(amount)}
+                >
+                  <Text
                     style={[
-                      styles.tipButton,
-                      selected &&
-                        styles.tipButtonSelected,
+                      styles.tipText,
+                      selected && styles.tipTextSelected,
                     ]}
-                    onPress={() =>
-                      setTip(amount)
-                    }
                   >
-                    <Text
-                      style={[
-                        styles.tipText,
-                        selected &&
-                          styles.tipTextSelected,
-                      ]}
-                    >
-                      {amount === 0
-                        ? "No Tip"
-                        : `₹${amount}`}
-                    </Text>
-                  </Pressable>
-                );
-              }
-            )}
+                    {amount === 0
+                      ? "No Tip"
+                      : `₹${amount}`}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
         {/* BILL */}
 
         <View style={styles.section}>
-          <Text
-            style={styles.sectionTitle}
-          >
+          <Text style={styles.sectionTitle}>
             Bill Details
           </Text>
 
           <View style={styles.billRow}>
-            <Text
-              style={styles.billLabel}
-            >
+            <Text style={styles.billLabel}>
               Item Total
             </Text>
 
-            <Text
-              style={styles.billValue}
-            >
+            <Text style={styles.billValue}>
               ₹{itemTotal.toFixed(2)}
             </Text>
           </View>
 
           <View style={styles.billRow}>
-            <Text
-              style={styles.billLabel}
-            >
+            <Text style={styles.billLabel}>
               Platform Fee
             </Text>
 
-            <Text
-              style={styles.billValue}
-            >
+            <Text style={styles.billValue}>
               ₹{platformFee.toFixed(2)}
             </Text>
           </View>
 
           <View style={styles.billRow}>
-            <Text
-              style={styles.billLabel}
-            >
+            <Text style={styles.billLabel}>
               Delivery Partner Fee
             </Text>
 
             <Text
               style={[
                 styles.billValue,
-                deliveryFee === 0 &&
-                  styles.freeValue,
+                deliveryFee === 0 && styles.freeValue,
               ]}
             >
               {deliveryFee === 0
                 ? "FREE"
-                : `₹${deliveryFee.toFixed(
-                    2
-                  )}`}
+                : `₹${deliveryFee.toFixed(2)}`}
             </Text>
           </View>
 
           {tip > 0 && (
-            <View
-              style={styles.billRow}
-            >
-              <Text
-                style={styles.billLabel}
-              >
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>
                 Delivery Partner Tip
               </Text>
 
-              <Text
-                style={styles.billValue}
-              >
+              <Text style={styles.billValue}>
                 ₹{tip.toFixed(2)}
               </Text>
             </View>
           )}
 
-          <View
-            style={styles.totalDivider}
-          />
+          <View style={styles.totalDivider} />
 
-          <View
-            style={styles.totalRow}
-          >
-            <Text
-              style={styles.totalLabel}
-            >
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>
               Total
             </Text>
 
-            <Text
-              style={styles.totalValue}
-            >
+            <Text style={styles.totalValue}>
               ₹{total.toFixed(2)}
             </Text>
           </View>
@@ -659,57 +485,41 @@ export default function Cart() {
             item.price &&
             item.mrp > item.price
         ) && (
-          <View
-            style={styles.savingsCard}
-          >
+          <View style={styles.savingsCard}>
             <Ionicons
               name="pricetag-outline"
               size={19}
               color={COLORS.primary}
             />
 
-            <Text
-              style={styles.savingsText}
-            >
+            <Text style={styles.savingsText}>
               You are getting great
               prices on your groceries!
             </Text>
           </View>
         )}
 
-        <View
-          style={styles.bottomSpace}
-        />
+        <View style={styles.bottomSpace} />
       </ScrollView>
 
       {/* CHECKOUT BAR */}
 
-      <View
-        style={styles.bottomBar}
-      >
+      <View style={styles.bottomBar}>
         <View>
-          <Text
-            style={styles.bottomLabel}
-          >
+          <Text style={styles.bottomLabel}>
             Total
           </Text>
 
-          <Text
-            style={styles.bottomTotal}
-          >
+          <Text style={styles.bottomTotal}>
             ₹{total.toFixed(2)}
           </Text>
         </View>
 
         <Pressable
-          style={
-            styles.checkoutButton
-          }
+          style={styles.checkoutButton}
           onPress={goToCheckout}
         >
-          <Text
-            style={styles.checkoutText}
-          >
+          <Text style={styles.checkoutText}>
             PROCEED TO CHECKOUT
           </Text>
 

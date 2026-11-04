@@ -57,6 +57,15 @@ export default function AddressScreen() {
     router.push("/checkout/add-address");
   }
 
+  function editAddress(address) {
+    if (!address?.id) return;
+
+    router.push({
+      pathname: "/checkout/add-address",
+      params: { id: String(address.id) },
+    });
+  }
+
   const selected = addresses.find(
     (a) => String(a.id) === String(selectedId)
   );
@@ -132,7 +141,11 @@ export default function AddressScreen() {
                 ]}
               >
                 {isSelected && <View style={styles.selectedTopLine} />}
-                <AddressCard address={address} selected={isSelected} />
+                <AddressCard
+                  address={address}
+                  selected={isSelected}
+                  onChange={() => editAddress(address)}
+                />
               </Pressable>
             );
           })
