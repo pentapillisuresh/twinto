@@ -445,7 +445,7 @@ export function useLocation() {
 
 export function CartProvider({ children }) {
   const [cart, setCart] = useState([]);
-  const [tip, setTip] = useState();
+  const [tip, setTip] = useState(0);
 
   const [cartLoaded, setCartLoaded] = useState(false);
 

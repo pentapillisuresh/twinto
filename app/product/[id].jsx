@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -7,11 +8,10 @@ import {
   StyleSheet,
   Text,
   View,
+  StatusBar,
+  Platform,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -33,6 +33,7 @@ const PREMIUM = {
   muted: "#858B95",
   gray: "#68717F",
   imageBg: "#F8F5F1",
+  gold: "#FFE19A",
 };
 
 export default function ProductDetails() {
@@ -40,18 +41,26 @@ export default function ProductDetails() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
 
-  const { cart, itemCount = 0, addToCart, increase, decrease } = useCart();
+  const {
+    cart,
+    itemCount = 0,
+    addToCart,
+    increase,
+    decrease,
+  } = useCart();
 
   const [product, setProduct] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // ORIGINAL PRODUCT API LOGIC
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
         const data = await getProductById(id);
         setProduct(data);
+
         if (data?.categoryId) {
           const list = await getProductsByCategory(data.categoryId);
           setRelated(
@@ -68,35 +77,140 @@ export default function ProductDetails() {
     })();
   }, [id]);
 
+  const topInset =
+    Platform.OS === "ios" || Platform.Version >= 35
+      ? insets.top
+      : 0;
+
+  // FIXED HEADER
+  function renderHeader() {
+    return (
+      <View
+        style={[
+          styles.headerBackground,
+          { paddingTop: topInset + 16 },
+        ]}
+      >
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
+
+        <View style={styles.headerRow}>
+          <Pressable
+            style={styles.headerButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={21}
+              color={PREMIUM.white}
+            />
+          </Pressable>
+
+          <View style={styles.headerTitleBox}>
+            <Text style={styles.headerTitle}>
+              Product Details
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              Discover your favorites
+            </Text>
+          </View>
+
+          <Pressable
+            style={styles.headerButton}
+            onPress={() => router.push("/(tabs)/cart")}
+          >
+            <Ionicons
+              name="bag-outline"
+              size={21}
+              color={PREMIUM.white}
+            />
+            {itemCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>
+                  {itemCount > 99 ? "99+" : itemCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.headerInfo}>
+          <View style={styles.headerInfoIcon}>
+            <Ionicons
+              name="sparkles-outline"
+              size={19}
+              color={PREMIUM.gold}
+            />
+          </View>
+          <View style={styles.headerInfoContent}>
+            <Text style={styles.headerInfoTitle}>
+              Fresh picks for you
+            </Text>
+            <Text style={styles.headerInfoSubtitle}>
+              Quality groceries at great prices
+            </Text>
+          </View>
+          <Ionicons
+            name="checkmark-circle-outline"
+            size={21}
+            color={PREMIUM.white}
+          />
+        </View>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={PREMIUM.primary} />
-      </SafeAreaView>
+      <View style={styles.container}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={PREMIUM.primary}
+        />
+        {renderHeader()}
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator
+            size="large"
+            color={PREMIUM.primary}
+          />
+        </View>
+      </View>
     );
   }
 
   if (!product) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <View style={styles.errorIcon}>
-          <Ionicons
-            name="alert-circle-outline"
-            size={32}
-            color={PREMIUM.primary}
-          />
+      <View style={styles.container}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={PREMIUM.primary}
+        />
+        {renderHeader()}
+        <View style={styles.loadingContainer}>
+          <View style={styles.errorIcon}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={32}
+              color={PREMIUM.primary}
+            />
+          </View>
+          <Text style={styles.errorText}>
+            Product not found
+          </Text>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backButtonText}>
+              Go Back
+            </Text>
+          </Pressable>
         </View>
-        <Text style={styles.errorText}>Product not found</Text>
-        <Pressable
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </Pressable>
-      </SafeAreaView>
+      </View>
     );
   }
 
+  // ORIGINAL CART LOOKUP LOGIC
   const cartItem = cart.find((item) => {
     if (!item) return false;
     const cid = item.id ?? item.product?.id;
@@ -105,55 +219,36 @@ export default function ProductDetails() {
 
   const quantity = Number(cartItem?.quantity) || 0;
 
-  const imageSource = product.image ? { uri: product.image } : null;
+  const imageSource = product.image
+    ? { uri: product.image }
+    : null;
 
   const saveAmount =
-    Number(product.mrp || 0) - Number(product.price || 0);
+    Number(product.mrp || 0) -
+    Number(product.price || 0);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Pressable
-          style={styles.headerButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={23}
-            color={PREMIUM.navy}
-          />
-        </Pressable>
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={PREMIUM.primary}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
+      />
 
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Product Details
-        </Text>
-
-        <Pressable
-          style={styles.headerButton}
-          onPress={() => router.push("/(tabs)/cart")}
-        >
-          <Ionicons
-            name="bag-outline"
-            size={23}
-            color={PREMIUM.navy}
-          />
-          {itemCount > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>
-                {itemCount > 99 ? "99+" : itemCount}
-              </Text>
-            </View>
-          )}
-        </Pressable>
-      </View>
+      {renderHeader()}
 
       <ScrollView
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {/* IMAGE */}
+        {/* PRODUCT IMAGE */}
         <View style={styles.imageSection}>
+          <View style={styles.imageDecor} />
+
           <View style={styles.imageBox}>
             {imageSource ? (
               <Image
@@ -164,7 +259,7 @@ export default function ProductDetails() {
             ) : (
               <Ionicons
                 name="image-outline"
-                size={60}
+                size={55}
                 color={PREMIUM.muted}
               />
             )}
@@ -172,6 +267,11 @@ export default function ProductDetails() {
 
           {product.discount > 0 && (
             <View style={styles.discountBadge}>
+              <Ionicons
+                name="pricetag"
+                size={12}
+                color={PREMIUM.white}
+              />
               <Text style={styles.discountText}>
                 {product.discount}% OFF
               </Text>
@@ -179,18 +279,40 @@ export default function ProductDetails() {
           )}
         </View>
 
-        {/* INFO */}
+        {/* PRODUCT DETAILS */}
         <View style={styles.infoContainer}>
-          <Text style={styles.categoryText}>{product.category}</Text>
-          <Text style={styles.productName}>{product.name}</Text>
+          <View style={styles.categoryBadge}>
+            <Ionicons
+              name="grid-outline"
+              size={12}
+              color={PREMIUM.primary}
+            />
+            <Text style={styles.categoryText}>
+              {product.category}
+            </Text>
+          </View>
+
+          <Text style={styles.productName}>
+            {product.name}
+          </Text>
 
           <View style={styles.metaRow}>
-            <Text style={styles.weight}>{product.weight}</Text>
+            <View style={styles.weightBadge}>
+              <Ionicons
+                name="cube-outline"
+                size={14}
+                color={PREMIUM.gray}
+              />
+              <Text style={styles.weight}>
+                {product.weight}
+              </Text>
+            </View>
+
             <View style={styles.ratingRow}>
               <Ionicons
                 name="star"
                 size={15}
-                color={PREMIUM.primary}
+                color="#F4B740"
               />
               <Text style={styles.ratingText}>
                 {product.rating || 0}
@@ -201,13 +323,27 @@ export default function ProductDetails() {
             </View>
           </View>
 
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>₹{product.price}</Text>
-            {product.mrp > product.price && (
-              <Text style={styles.mrp}>₹{product.mrp}</Text>
-            )}
+          {/* PRICE */}
+          <View style={styles.priceCard}>
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>
+                ₹{product.price}
+              </Text>
+
+              {product.mrp > product.price && (
+                <Text style={styles.mrp}>
+                  ₹{product.mrp}
+                </Text>
+              )}
+            </View>
+
             {saveAmount > 0 && (
               <View style={styles.saveBadge}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color={PREMIUM.primary}
+                />
                 <Text style={styles.saveBadgeText}>
                   Save ₹{saveAmount}
                 </Text>
@@ -215,14 +351,16 @@ export default function ProductDetails() {
             )}
           </View>
 
+          {/* DELIVERY */}
           <View style={styles.deliveryCard}>
             <View style={styles.deliveryIcon}>
               <Ionicons
                 name="flash"
-                size={18}
+                size={19}
                 color={PREMIUM.primary}
               />
             </View>
+
             <View style={styles.deliveryContent}>
               <Text style={styles.deliveryTitle}>
                 Delivery in {product.delivery}
@@ -231,23 +369,35 @@ export default function ProductDetails() {
                 Fast delivery to your location
               </Text>
             </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={PREMIUM.primary}
+            />
           </View>
 
+          {/* DESCRIPTION */}
           {product.description ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                About this product
-              </Text>
+              <View style={styles.sectionHeading}>
+                <View style={styles.sectionAccent} />
+                <Text style={styles.sectionTitle}>
+                  About this product
+                </Text>
+              </View>
+
               <Text style={styles.description}>
                 {product.description}
               </Text>
             </View>
           ) : null}
 
-          {/* RELATED */}
+          {/* RELATED PRODUCTS */}
           {related.length > 0 && (
             <View style={styles.relatedSection}>
-              <View style={styles.relatedHeader}>
+              <View style={styles.sectionHeading}>
+                <View style={styles.sectionAccent} />
                 <View>
                   <Text style={styles.relatedTitle}>
                     You May Also Like
@@ -267,6 +417,7 @@ export default function ProductDetails() {
                   const relImg = item.image
                     ? { uri: item.image }
                     : null;
+
                   return (
                     <Pressable
                       key={String(item.id)}
@@ -290,19 +441,23 @@ export default function ProductDetails() {
                           />
                         )}
                       </View>
+
                       <Text
                         style={styles.relatedName}
-                        numberOfLines={1}
+                        numberOfLines={2}
                       >
                         {item.name}
                       </Text>
+
                       <Text style={styles.relatedWeight}>
                         {item.weight}
                       </Text>
+
                       <View style={styles.relatedBottom}>
                         <Text style={styles.relatedPrice}>
                           ₹{item.price}
                         </Text>
+
                         <Pressable
                           style={styles.relatedAdd}
                           onPress={(e) => {
@@ -312,7 +467,7 @@ export default function ProductDetails() {
                         >
                           <Ionicons
                             name="add"
-                            size={18}
+                            size={19}
                             color={PREMIUM.white}
                           />
                         </Pressable>
@@ -326,11 +481,11 @@ export default function ProductDetails() {
         </View>
       </ScrollView>
 
-      {/* BOTTOM BAR */}
+      {/* FIXED BOTTOM CART BAR */}
       <View
         style={[
           styles.bottomBar,
-          { bottom: insets.bottom },
+          { paddingBottom: Math.max(insets.bottom, 12) },
         ]}
       >
         {quantity === 0 ? (
@@ -340,10 +495,17 @@ export default function ProductDetails() {
           >
             <Ionicons
               name="bag-add-outline"
-              size={21}
+              size={20}
               color={PREMIUM.white}
             />
-            <Text style={styles.addButtonText}>Add to Cart</Text>
+            <Text style={styles.addButtonText}>
+              Add to Cart
+            </Text>
+            <Ionicons
+              name="arrow-forward"
+              size={18}
+              color={PREMIUM.white}
+            />
           </Pressable>
         ) : (
           <View style={styles.cartActionRow}>
@@ -354,344 +516,686 @@ export default function ProductDetails() {
               >
                 <Ionicons
                   name="remove"
-                  size={20}
+                  size={19}
                   color={PREMIUM.primary}
                 />
               </Pressable>
-              <Text style={styles.quantityText}>{quantity}</Text>
+
+              <Text style={styles.quantityText}>
+                {quantity}
+              </Text>
+
               <Pressable
-                style={styles.quantityButton}
+                style={styles.quantityButtonPlus}
                 onPress={() => increase(product.id)}
               >
                 <Ionicons
                   name="add"
-                  size={20}
-                  color={PREMIUM.primary}
+                  size={19}
+                  color={PREMIUM.white}
                 />
               </Pressable>
             </View>
 
             <Pressable
               style={styles.viewCartButton}
-              onPress={() => router.push("/(tabs)/cart")}
+              onPress={() =>
+                router.push("/(tabs)/cart")
+              }
             >
               <Ionicons
                 name="bag-outline"
-                size={20}
+                size={19}
                 color={PREMIUM.white}
               />
-              <Text style={styles.viewCartText}>View Cart</Text>
+              <Text style={styles.viewCartText}>
+                View Cart
+              </Text>
               <Ionicons
                 name="arrow-forward"
-                size={18}
+                size={17}
                 color={PREMIUM.white}
               />
             </Pressable>
           </View>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: PREMIUM.background },
-  loadingContainer: {
+  container: {
     flex: 1,
     backgroundColor: PREMIUM.background,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  header: {
-    height: 58,
-    paddingHorizontal: 15,
-    backgroundColor: PREMIUM.white,
+
+  // FIXED HEADER
+  headerBackground: {
+    backgroundColor: PREMIUM.primary,
+    paddingHorizontal: 18,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    elevation: 4,
+    zIndex: 10,
+  },
+
+  headerCircleOne: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    right: -95,
+    top: -110,
+  },
+
+  headerCircleTwo: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    left: -65,
+    bottom: -60,
+  },
+
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: PREMIUM.border,
   },
+
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    backgroundColor: PREMIUM.pinkSoft,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
-  headerTitle: {
+
+  headerTitleBox: {
     flex: 1,
-    textAlign: "center",
-    color: PREMIUM.navy,
-    fontSize: 17,
-    fontWeight: "900",
-    marginHorizontal: 8,
+    alignItems: "center",
+    paddingHorizontal: 8,
   },
+
+  headerTitle: {
+    color: PREMIUM.white,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  headerSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  headerInfo: {
+    marginTop: 19,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  headerInfoIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+
+  headerInfoContent: {
+    flex: 1,
+  },
+
+  headerInfoTitle: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  headerInfoSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
   cartBadge: {
     position: "absolute",
-    top: -3,
-    right: -3,
-    minWidth: 18,
-    height: 18,
+    top: -5,
+    right: -5,
+    minWidth: 20,
+    height: 20,
     paddingHorizontal: 4,
-    borderRadius: 9,
-    backgroundColor: PREMIUM.primary,
+    borderRadius: 10,
+    backgroundColor: PREMIUM.white,
     borderWidth: 2,
-    borderColor: PREMIUM.white,
+    borderColor: PREMIUM.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  cartBadgeText: { color: PREMIUM.white, fontSize: 8, fontWeight: "900" },
-  content: { paddingBottom: 180 },
+
+  cartBadgeText: {
+    color: PREMIUM.primary,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  scrollView: {
+    flex: 1,
+  },
+
+  content: {
+    paddingBottom: 25,
+  },
+
+  // PRODUCT IMAGE
   imageSection: {
-    height: 275,
+    marginHorizontal: 16,
+    marginTop: 17,
+    height: 280,
     backgroundColor: PREMIUM.white,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     position: "relative",
   },
+
+  imageDecor: {
+    position: "absolute",
+    width: 255,
+    height: 255,
+    borderRadius: 128,
+    backgroundColor: PREMIUM.pinkSoft,
+    opacity: 0.7,
+  },
+
   imageBox: {
-    width: 245,
-    height: 245,
-    borderRadius: 123,
+    width: 232,
+    height: 232,
+    borderRadius: 116,
     backgroundColor: PREMIUM.imageBg,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-  productImage: { width: "100%", height: "100%" },
+
+  productImage: {
+    width: "100%",
+    height: "100%",
+  },
+
   discountBadge: {
     position: "absolute",
-    top: 15,
-    left: 16,
+    top: 14,
+    left: 14,
     backgroundColor: PREMIUM.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  discountText: {
+    color: PREMIUM.white,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  // PRODUCT INFO
+  infoContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+  },
+
+  categoryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
     paddingHorizontal: 11,
     paddingVertical: 7,
-    borderRadius: 9,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.pinkSoft,
+    gap: 5,
+    marginBottom: 10,
   },
-  discountText: { color: PREMIUM.white, fontSize: 11, fontWeight: "900" },
-  infoContainer: { paddingHorizontal: 17, paddingTop: 12 },
+
   categoryText: {
     color: PREMIUM.primary,
-    fontSize: 9,
-    fontWeight: "900",
+    fontSize: 10,
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 2,
+    letterSpacing: 0.5,
   },
+
   productName: {
     color: PREMIUM.navy,
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 23,
+    lineHeight: 29,
     fontWeight: "900",
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
   },
+
   metaRow: {
-    marginTop: 3,
+    marginTop: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 8,
   },
-  weight: { color: PREMIUM.gray, fontSize: 13, fontWeight: "600" },
-  ratingRow: { flexDirection: "row", alignItems: "center" },
+
+  weightBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: PREMIUM.white,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    gap: 6,
+  },
+
+  weight: {
+    color: PREMIUM.gray,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PREMIUM.white,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 18,
+  },
+
   ratingText: {
     color: PREMIUM.navy,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
+    marginLeft: 5,
+  },
+
+  reviewText: {
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginLeft: 4,
   },
-  reviewText: { color: PREMIUM.muted, fontSize: 11, marginLeft: 3 },
+
+  // PRICE CARD
+  priceCard: {
+    backgroundColor: PREMIUM.white,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    borderRadius: 20,
+    marginTop: 16,
+    padding: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 7,
     flexWrap: "wrap",
   },
-  price: { color: PREMIUM.primary, fontSize: 27, fontWeight: "900" },
+
+  price: {
+    color: PREMIUM.primary,
+    fontSize: 25,
+    fontWeight: "900",
+  },
+
   mrp: {
     color: PREMIUM.muted,
-    fontSize: 13,
+    fontSize: 12,
+    marginLeft: 9,
     textDecorationLine: "line-through",
-    marginLeft: 9,
   },
+
   saveBadge: {
-    marginLeft: 9,
     backgroundColor: PREMIUM.pinkSoft,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 7,
-  },
-  saveBadgeText: { color: PREMIUM.primary, fontSize: 9, fontWeight: "900" },
-  deliveryCard: {
-    marginTop: 9,
-    minHeight: 56,
     paddingHorizontal: 10,
-    borderRadius: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  saveBadgeText: {
+    color: PREMIUM.primary,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  // DELIVERY CARD
+  deliveryCard: {
+    marginTop: 12,
+    minHeight: 70,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    borderRadius: 20,
     backgroundColor: PREMIUM.pinkSoft,
     borderWidth: 1,
     borderColor: PREMIUM.pinkLight,
     flexDirection: "row",
     alignItems: "center",
   },
+
   deliveryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
   },
-  deliveryContent: { flex: 1, marginLeft: 9 },
-  deliveryTitle: { color: PREMIUM.navy, fontSize: 12, fontWeight: "900" },
-  deliverySubtitle: { color: PREMIUM.muted, fontSize: 9, marginTop: 2 },
-  section: { marginTop: 13 },
-  sectionTitle: {
-    color: PREMIUM.navy,
-    fontSize: 16,
-    fontWeight: "900",
-    marginBottom: 5,
+
+  deliveryContent: {
+    flex: 1,
+    marginLeft: 11,
   },
-  description: { color: PREMIUM.gray, fontSize: 12, lineHeight: 18 },
-  relatedSection: { marginTop: 16 },
-  relatedHeader: {
+
+  deliveryTitle: {
+    color: PREMIUM.navy,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  deliverySubtitle: {
+    color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  // DESCRIPTION
+  section: {
+    marginTop: 17,
+    backgroundColor: PREMIUM.white,
+    borderRadius: 20,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+  },
+
+  sectionHeading: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 10,
   },
+
+  sectionAccent: {
+    width: 3,
+    height: 23,
+    borderRadius: 3,
+    backgroundColor: PREMIUM.primary,
+    marginRight: 10,
+  },
+
+  sectionTitle: {
+    color: PREMIUM.navy,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  description: {
+    color: PREMIUM.gray,
+    fontSize: 12,
+    lineHeight: 20,
+  },
+
+  // RELATED PRODUCTS
+  relatedSection: {
+    marginTop: 24,
+    marginBottom: 12,
+  },
+
   relatedTitle: {
     color: PREMIUM.navy,
     fontSize: 17,
     fontWeight: "900",
   },
-  relatedSubtitle: { color: PREMIUM.muted, fontSize: 9, marginTop: 2 },
-  relatedScroll: { paddingRight: 8 },
+
+  relatedSubtitle: {
+    color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  relatedScroll: {
+    paddingTop: 5,
+    paddingRight: 8,
+    paddingBottom: 5,
+  },
+
   relatedCard: {
-    width: 137,
-    marginRight: 9,
-    padding: 7,
-    borderRadius: 15,
+    width: 148,
+    marginRight: 11,
+    padding: 9,
+    borderRadius: 19,
     backgroundColor: PREMIUM.white,
     borderWidth: 1,
     borderColor: PREMIUM.border,
+    shadowColor: "#7A2949",
+    shadowOpacity: 0.04,
+    shadowRadius: 7,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    elevation: 1,
   },
+
   relatedImageBox: {
     width: "100%",
-    height: 88,
-    borderRadius: 11,
+    height: 108,
+    borderRadius: 15,
     backgroundColor: PREMIUM.imageBg,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-  relatedImage: { width: "100%", height: "100%" },
+
+  relatedImage: {
+    width: "100%",
+    height: "100%",
+  },
+
   relatedName: {
     color: PREMIUM.navy,
-    fontSize: 11,
-    fontWeight: "900",
-    marginTop: 6,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 9,
+    minHeight: 32,
+    lineHeight: 16,
   },
-  relatedWeight: { color: PREMIUM.muted, fontSize: 9, marginTop: 1 },
-  relatedBottom: {
+
+  relatedWeight: {
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginTop: 4,
+  },
+
+  relatedBottom: {
+    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+
   relatedPrice: {
     color: PREMIUM.primary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "900",
   },
+
   relatedAdd: {
-    width: 29,
-    height: 29,
-    borderRadius: 9,
+    width: 35,
+    height: 35,
+    borderRadius: 18,
     backgroundColor: PREMIUM.primary,
     alignItems: "center",
     justifyContent: "center",
   },
+
+  // FIXED BOTTOM CART BAR
   bottomBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: PREMIUM.white,
-    paddingHorizontal: 15,
-    paddingTop: 8,
-    paddingBottom: 11,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: PREMIUM.border,
-    elevation: 12,
+    shadowColor: PREMIUM.navy,
+    shadowOffset: {
+      width: 0,
+      height: -3,
+    },
+    shadowOpacity: 0.06,
+    shadowRadius: 9,
+    elevation: 9,
   },
+
   addButton: {
-    height: 52,
-    borderRadius: 15,
+    height: 54,
+    borderRadius: 28,
     backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 9,
   },
-  addButtonText: { color: PREMIUM.white, fontSize: 14, fontWeight: "900" },
-  cartActionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+
+  addButtonText: {
+    color: PREMIUM.white,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  cartActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
   quantityContainer: {
-    width: 112,
-    height: 52,
-    borderRadius: 15,
+    width: 120,
+    height: 54,
+    borderRadius: 28,
     backgroundColor: PREMIUM.pinkSoft,
     borderWidth: 1,
     borderColor: PREMIUM.pinkLight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 5,
   },
+
   quantityButton: {
-    width: 36,
-    height: 50,
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
   },
+
+  quantityButtonPlus: {
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   quantityText: {
-    minWidth: 24,
+    minWidth: 20,
     textAlign: "center",
     color: PREMIUM.navy,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
+
   viewCartButton: {
     flex: 1,
-    height: 52,
-    borderRadius: 15,
+    height: 54,
+    borderRadius: 28,
     backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 7,
   },
-  viewCartText: { color: PREMIUM.white, fontSize: 14, fontWeight: "900" },
+
+  viewCartText: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  // LOADING / ERROR
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: PREMIUM.background,
+  },
+
   errorIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
   errorText: {
     color: PREMIUM.navy,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "800",
     marginBottom: 18,
   },
+
   backButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 13,
+    paddingHorizontal: 27,
+    paddingVertical: 13,
+    borderRadius: 25,
     backgroundColor: PREMIUM.primary,
   },
-  backButtonText: { color: PREMIUM.white, fontSize: 13, fontWeight: "900" },
+
+  backButtonText: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
 });

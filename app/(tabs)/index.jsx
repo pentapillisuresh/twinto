@@ -1,4 +1,6 @@
+
 import { useEffect, useState } from "react";
+
 import {
   ActivityIndicator,
   Image,
@@ -6,14 +8,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
+  StatusBar,
 } from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { useLocation } from "../../context";
 import { getProducts } from "../../services/productService";
+
 import CategoryRow from "../../components/home/CategoryRow";
 import ProductCard from "../../components/product/ProductCard";
 
@@ -22,11 +26,12 @@ const PREMIUM = {
   primaryDark: "#A90042",
   navy: "#172033",
   white: "#FFFFFF",
-  background: "#FFF9FB",
+  background: "#FFFAFC",
   pinkSoft: "#FFF0F5",
   pinkLight: "#FDE3EC",
-  border: "#E9DDE2",
+  border: "#F0E3E8",
   muted: "#858B95",
+  gold: "#FFE19A",
 };
 
 export default function Home() {
@@ -35,12 +40,13 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
 
+  // ORIGINAL PRODUCT API LOGIC
   useEffect(() => {
     (async () => {
       try {
         const list = await getProducts();
+
         setProducts(list);
         setFilteredProducts(list);
       } catch (e) {
@@ -51,88 +57,97 @@ export default function Home() {
     })();
   }, []);
 
-  useEffect(() => {
-    const v = search.toLowerCase().trim();
-    if (!v) {
-      setFilteredProducts(products);
-      return;
-    }
-    setFilteredProducts(
-      products.filter((p) => {
-        const n = String(p.name || "").toLowerCase();
-        const c = String(p.category || "").toLowerCase();
-        const d = String(p.description || "").toLowerCase();
-        return n.includes(v) || c.includes(v) || d.includes(v);
-      })
-    );
-  }, [search, products]);
-
   const deliveryTime = location?.deliveryTime || "15 mins";
 
   return (
     <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={PREMIUM.primaryDark}
+      />
+
+      {/* FIXED PREMIUM HEADER - OUTSIDE SCROLLVIEW */}
+      <View style={styles.headerBackground}>
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
+
+        {/* LOCATION */}
+        <Pressable
+          onPress={() => router.push("/location")}
+          style={styles.locationSection}
+        >
+          <View style={styles.locationIcon}>
+            <Ionicons
+              name="location"
+              size={19}
+              color={PREMIUM.white}
+            />
+          </View>
+
+          <View style={styles.locationContent}>
+            <Text style={styles.deliverTo}>
+              DELIVER TO
+            </Text>
+
+            <View style={styles.locationRow}>
+              <Text
+                style={styles.location}
+                numberOfLines={1}
+              >
+                {location?.name || "Select location"}
+              </Text>
+
+              <Ionicons
+                name="chevron-down"
+                size={14}
+                color={PREMIUM.white}
+              />
+            </View>
+
+            <Text style={styles.locationSubtitle}>
+              Tap to change location
+            </Text>
+          </View>
+        </Pressable>
+
+        {/* DELIVERY INFORMATION */}
+        <View style={styles.deliveryInformation}>
+          <View style={styles.deliveryLeft}>
+            <View style={styles.deliveryIcon}>
+              <Ionicons
+                name="flash"
+                size={16}
+                color={PREMIUM.gold}
+              />
+            </View>
+
+            <View>
+              <Text style={styles.deliveryLabel}>
+                EXPRESS DELIVERY
+              </Text>
+
+              <Text style={styles.deliveryValue}>
+                Delivered in {deliveryTime}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.deliveryStatus}>
+            <View style={styles.statusDot} />
+
+            <Text style={styles.statusText}>
+              Available
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ONLY CONTENT SCROLLS */}
       <ScrollView
+        style={styles.contentScroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {/* HEADER */}
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.push("/location")}
-            style={styles.locationSection}
-          >
-            <View style={styles.locationIcon}>
-              <Ionicons
-                name="location"
-                size={20}
-                color={PREMIUM.primary}
-              />
-            </View>
-            <View style={styles.locationContent}>
-              <Text style={styles.deliverTo}>DELIVER TO</Text>
-              <View style={styles.locationRow}>
-                <Text style={styles.location} numberOfLines={1}>
-                  {location?.name || "Select location"}
-                </Text>
-                <Ionicons
-                  name="chevron-down"
-                  size={15}
-                  color={PREMIUM.navy}
-                />
-              </View>
-            </View>
-          </Pressable>
-
-          <View style={styles.deliveryPill}>
-            <View style={styles.deliveryIcon}>
-              <Ionicons
-                name="time-outline"
-                size={18}
-                color={PREMIUM.primary}
-              />
-            </View>
-            <Text style={styles.deliveryTime}>{deliveryTime}</Text>
-          </View>
-        </View>
-
-        {/* SEARCH */}
-        <View style={styles.searchBox}>
-          <Ionicons
-            name="search-outline"
-            size={22}
-            color={PREMIUM.primary}
-          />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search for products..."
-            placeholderTextColor="#969DAA"
-            style={styles.searchInput}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-        </View>
-
         {/* BANNER */}
         <Pressable
           onPress={() => router.push("/categories")}
@@ -147,206 +162,419 @@ export default function Home() {
 
         {/* CATEGORIES */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Categories</Text>
+          <View style={styles.sectionHeading}>
+            <View style={styles.sectionAccent} />
+
+            <View>
+              <Text style={styles.sectionTitle}>
+                Categories
+              </Text>
+
+              <Text style={styles.sectionSubtitle}>
+                Find your everyday essentials
+              </Text>
+            </View>
+          </View>
+
           <Pressable
             onPress={() => router.push("/categories")}
             style={styles.seeAllButton}
           >
-            <Text style={styles.seeAll}>See All</Text>
+            <Text style={styles.seeAll}>
+              View All
+            </Text>
+
             <Ionicons
-              name="chevron-forward"
-              size={17}
+              name="arrow-forward"
+              size={14}
               color={PREMIUM.primary}
             />
           </Pressable>
         </View>
+
+        {/* FOUR-COLUMN CATEGORY COMPONENT */}
         <View style={styles.categoryContainer}>
           <CategoryRow />
         </View>
 
         {/* BESTSELLERS */}
         <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>
-              {search ? "Search results" : "Bestsellers"}
-            </Text>
-            {!search && (
+          <View style={styles.sectionHeading}>
+            <View style={styles.sectionAccent} />
+
+            <View>
+              <Text style={styles.sectionTitle}>
+                Bestsellers
+              </Text>
+
               <Text style={styles.sectionSubtitle}>
                 Popular choices from TWINTO
               </Text>
-            )}
+            </View>
+          </View>
+
+          <View style={styles.trendingBadge}>
+            <Ionicons
+              name="flame"
+              size={13}
+              color={PREMIUM.primary}
+            />
+
+            <Text style={styles.trendingText}>
+              Popular
+            </Text>
           </View>
         </View>
 
-        {/* PRODUCTS */}
+        {/* PRODUCTS - ORIGINAL LOGIC */}
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={PREMIUM.primary} />
+            <ActivityIndicator
+              size="large"
+              color={PREMIUM.primary}
+            />
           </View>
         ) : filteredProducts.length > 0 ? (
           <View style={styles.grid}>
             {filteredProducts.map((product) => (
-              <ProductCard key={String(product.id)} product={product} />
+              <ProductCard
+                key={String(product.id)}
+                product={product}
+              />
             ))}
           </View>
         ) : (
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
               <Ionicons
-                name="search-outline"
-                size={30}
+                name="cube-outline"
+                size={28}
                 color={PREMIUM.primary}
               />
             </View>
-            <Text style={styles.emptyTitle}>No products found</Text>
+
+            <Text style={styles.emptyTitle}>
+              No products found
+            </Text>
+
             <Text style={styles.emptyText}>
-              Try searching for something else.
+              Products are currently unavailable.
             </Text>
           </View>
         )}
 
-        <View style={{ height: 25 }} />
+        <View style={styles.bottomSpace} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PREMIUM.background },
-  scroll: { paddingTop: 8, paddingBottom: 20 },
-  header: {
-    paddingHorizontal: 18,
-    paddingTop: 25,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
+  container: {
+    flex: 1,
+    backgroundColor: PREMIUM.background,
   },
+
+  // FIXED HEADER
+headerBackground: {
+  backgroundColor: PREMIUM.primary,
+  paddingTop: 50,       // More gap at top
+  paddingHorizontal: 18,
+  paddingBottom: 25,    // More gap at bottom
+  borderBottomLeftRadius: 25,
+  borderBottomRightRadius: 25,
+  overflow: "hidden",
+  zIndex: 10,
+  elevation: 4,
+},
+
+  headerCircleOne: {
+    position: "absolute",
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    right: -90,
+    top: -100,
+  },
+
+  headerCircleTwo: {
+    position: "absolute",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    left: -60,
+    bottom: -50,
+  },
+
   locationSection: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 10,
   },
+
   locationIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
-  },
-  locationContent: { flex: 1 },
-  deliverTo: {
-    color: PREMIUM.muted,
-    fontSize: 8,
-    fontWeight: "900",
-    letterSpacing: 1,
-  },
-  locationRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
-  location: {
-    color: PREMIUM.navy,
-    fontSize: 15,
-    fontWeight: "900",
-    maxWidth: 175,
-    marginRight: 3,
-  },
-  deliveryPill: {
+    width: 43,
     height: 43,
-    minWidth: 94,
-    paddingHorizontal: 10,
-    borderRadius: 22,
-    backgroundColor: PREMIUM.pinkSoft,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.16)",
     borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
-    flexDirection: "row",
+    borderColor: "rgba(255,255,255,0.20)",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 14,
+    marginRight: 11,
   },
-  deliveryIcon: { marginRight: 5 },
-  deliveryTime: { color: PREMIUM.primary, fontSize: 13, fontWeight: "900" },
-  searchBox: {
-    height: 50,
-    marginHorizontal: 18,
-    marginTop: 16,
-    borderRadius: 17,
-    backgroundColor: PREMIUM.white,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
+
+  locationContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  deliverTo: {
+    color: "#FFDCE9",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+
+  locationRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
+    marginTop: 3,
   },
-  searchInput: {
-    flex: 1,
-    height: 50,
-    marginHorizontal: 9,
-    color: PREMIUM.navy,
-    fontSize: 12,
+
+  location: {
+    flexShrink: 1,
+    color: PREMIUM.white,
+    fontSize: 15,
+    fontWeight: "800",
+    marginRight: 5,
+  },
+
+  locationSubtitle: {
+    color: "#FFE1EC",
+    fontSize: 10,
+    marginTop: 3,
     fontWeight: "500",
   },
+
+  // DELIVERY INFORMATION
+  deliveryInformation: {
+    marginTop: 19,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  deliveryLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    minWidth: 0,
+  },
+
+  deliveryIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+
+  deliveryLabel: {
+    color: "#FFDCE9",
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+
+  deliveryValue: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 3,
+  },
+
+  deliveryStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    gap: 5,
+  },
+
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#B9FFD3",
+  },
+
+  statusText: {
+    color: PREMIUM.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  // SCROLLABLE CONTENT
+  contentScroll: {
+    flex: 1,
+  },
+
+  scroll: {
+    paddingBottom: 30,
+  },
+
+  // BANNER
   bannerContainer: {
     marginHorizontal: 18,
     marginTop: 18,
-    borderRadius: 22,
+    borderRadius: 21,
     overflow: "hidden",
     backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: PREMIUM.pinkLight,
   },
+
   bannerImage: {
     width: "100%",
     aspectRatio: 2048 / 768,
     height: undefined,
   },
+
+  // SECTION HEADERS
   sectionHeader: {
-    marginTop: 14,
+    marginTop: 25,
     paddingHorizontal: 18,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
   },
+
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    minWidth: 0,
+  },
+
+  sectionAccent: {
+    width: 3,
+    height: 32,
+    borderRadius: 3,
+    backgroundColor: PREMIUM.primary,
+    marginRight: 10,
+  },
+
   sectionTitle: {
     color: PREMIUM.navy,
-    fontSize: 21,
-    fontWeight: "900",
-    letterSpacing: -0.4,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
-  sectionSubtitle: { color: PREMIUM.muted, fontSize: 10, marginTop: 4 },
+
+  sectionSubtitle: {
+    color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 3,
+    fontWeight: "500",
+  },
+
   seeAllButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 5,
+    backgroundColor: PREMIUM.pinkSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
+    gap: 4,
+    marginLeft: 8,
   },
-  seeAll: { color: PREMIUM.primary, fontSize: 12, fontWeight: "900" },
-  categoryContainer: { marginTop: 8 },
+
+  seeAll: {
+    color: PREMIUM.primary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  // CATEGORIES
+  categoryContainer: {
+    marginTop: 15,
+    paddingHorizontal: 10,
+  },
+
+  // TRENDING
+  trendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PREMIUM.pinkSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
+    gap: 5,
+    marginLeft: 8,
+  },
+
+  trendingText: {
+    color: PREMIUM.primary,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  // PRODUCT GRID
   grid: {
     paddingHorizontal: 18,
-    marginTop: 14,
+    marginTop: 16,
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "flex-start", // Changed from space-between
+    justifyContent: "flex-start",
     alignItems: "flex-start",
-    gap: 12, // Added gap for consistent spacing
+    gap: 12,
   },
-  loadingBox: { paddingVertical: 60, alignItems: "center" },
-  empty: { alignItems: "center", paddingHorizontal: 30, paddingVertical: 45 },
+
+  loadingBox: {
+    paddingVertical: 60,
+    alignItems: "center",
+  },
+
+  // EMPTY STATE
+  empty: {
+    alignItems: "center",
+    paddingHorizontal: 30,
+    paddingVertical: 45,
+  },
+
   emptyIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 21,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
+
   emptyTitle: {
     marginTop: 14,
-    fontSize: 17,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "800",
     color: PREMIUM.navy,
   },
-  emptyText: { marginTop: 5, fontSize: 12, color: PREMIUM.muted },
+
+  emptyText: {
+    marginTop: 5,
+    fontSize: 11,
+    color: PREMIUM.muted,
+    textAlign: "center",
+  },
+
+  bottomSpace: {
+    height: 25,
+  },
 });

@@ -1,3 +1,4 @@
+
 import {
   Pressable,
   StyleSheet,
@@ -7,126 +8,141 @@ import {
 
 import { Ionicons } from "@expo/vector-icons";
 
-import { COLORS } from "../../constants";
+const C = {
+  primary: "#C9004F",
+  navy: "#172033",
+  muted: "#858B95",
+  soft: "#FFF0F5",
+  white: "#FFFFFF",
+};
 
 export default function AddressCard({
   address,
   selected = true,
   onChange,
 }) {
+  const type = address?.type || "HOME";
+
+  const icon =
+    type.toUpperCase() === "WORK"
+      ? "briefcase-outline"
+      : type.toUpperCase() === "HOME"
+      ? "home-outline"
+      : "location-outline";
+
+  const fullAddress =
+    address?.address ||
+    [
+      address?.addressLine1,
+      address?.addressLine2,
+      address?.landmark,
+      address?.city,
+      address?.state,
+      address?.pincode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const phone = address?.phone || address?.mobile;
+
   return (
-    <View
-      style={[
-        styles.container,
-        selected && styles.selectedContainer,
-      ]}
-    >
-      {/* TOP */}
+    <View style={styles.container}>
       <View style={styles.top}>
         <View style={styles.iconBox}>
           <Ionicons
-            name="home"
-            size={21}
-            color={COLORS.primary}
+            name={icon}
+            size={22}
+            color={C.primary}
           />
         </View>
 
         <View style={styles.info}>
-          <View style={styles.nameRow}>
+          <View style={styles.typeRow}>
             <Text style={styles.type}>
-              {address.type}
+              {type}
             </Text>
 
-            <View style={styles.defaultBadge}>
-              <Ionicons
-                name="checkmark-circle"
-                size={10}
-                color={COLORS.primary}
-              />
-
-              <Text style={styles.defaultText}>
-                DEFAULT
-              </Text>
-            </View>
+            {address?.isDefault && (
+              <View style={styles.defaultBadge}>
+                <Text style={styles.defaultText}>
+                  DEFAULT
+                </Text>
+              </View>
+            )}
           </View>
 
           <Text style={styles.name}>
-            {address.name}
+            {address?.name || "Delivery Address"}
           </Text>
         </View>
 
         <Pressable
           onPress={onChange}
-          style={({ pressed }) => [
-            styles.change,
-            pressed && styles.changePressed,
-          ]}
+          style={styles.editButton}
         >
-          <Text style={styles.changeText}>
-            Change
+          <Ionicons
+            name="create-outline"
+            size={15}
+            color={C.primary}
+          />
+
+          <Text style={styles.editText}>
+            Edit
           </Text>
         </Pressable>
       </View>
 
-      {/* ADDRESS */}
-      <View style={styles.addressSection}>
-        <View style={styles.addressIcon}>
-          <Ionicons
-            name="location-outline"
-            size={15}
-            color={COLORS.muted}
-          />
-        </View>
+      <View style={styles.detailRow}>
+        <Ionicons
+          name="location-outline"
+          size={17}
+          color={C.primary}
+        />
 
         <Text style={styles.address}>
-          {address.address}
+          {fullAddress || "Address not available"}
         </Text>
       </View>
 
-      {/* PHONE */}
-      <View style={styles.phoneRow}>
-        <View style={styles.phoneIcon}>
-          <Ionicons
-            name="call-outline"
-            size={13}
-            color={COLORS.primary}
-          />
-        </View>
+      <View style={styles.detailRow}>
+        <Ionicons
+          name="call-outline"
+          size={16}
+          color={C.primary}
+        />
 
         <Text style={styles.phone}>
-          {address.phone}
+          {phone || "Phone not available"}
         </Text>
       </View>
 
-      {/* SELECTED */}
-      <View style={styles.selectedRow}>
+      <View style={styles.selectionRow}>
         <View
           style={[
             styles.radio,
             selected && styles.radioSelected,
           ]}
         >
-          {selected && (
-            <View style={styles.radioDot} />
-          )}
+          {selected && <View style={styles.radioDot} />}
         </View>
 
-        <Text style={styles.selectedText}>
-          Deliver to this address
+        <Text
+          style={[
+            styles.selectionText,
+            selected && styles.selectionTextActive,
+          ]}
+        >
+          {selected
+            ? "Selected for delivery"
+            : "Tap to deliver here"}
         </Text>
 
         {selected && (
-          <View style={styles.selectedBadge}>
-            <Ionicons
-              name="checkmark"
-              size={11}
-              color={COLORS.white}
-            />
-
-            <Text style={styles.selectedBadgeText}>
-              SELECTED
-            </Text>
-          </View>
+          <Ionicons
+            name="checkmark-circle"
+            size={21}
+            color={C.primary}
+          />
         )}
       </View>
     </View>
@@ -134,34 +150,11 @@ export default function AddressCard({
 }
 
 const styles = StyleSheet.create({
+  // No card background, border, shadow or margin.
+  // Parent AddressScreen owns the only card.
   container: {
-    marginHorizontal: 16,
-    marginTop: 0,
-
-    padding: 15,
-
-    borderRadius: 19,
-
-    backgroundColor: COLORS.white,
-
-    borderWidth: 1,
-    borderColor: "#EEDFE5",
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
+    padding: 16,
   },
-
-  selectedContainer: {
-    borderColor: "#F0C7D8",
-  },
-
-  /* TOP */
 
   top: {
     flexDirection: "row",
@@ -169,225 +162,127 @@ const styles = StyleSheet.create({
   },
 
   iconBox: {
-    width: 45,
-    height: 45,
-
-    borderRadius: 14,
-
-    backgroundColor: "#FFE3EF",
-
+    width: 47,
+    height: 47,
+    borderRadius: 15,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   info: {
     flex: 1,
-
-    marginLeft: 11,
-    marginRight: 7,
+    marginHorizontal: 11,
   },
 
-  nameRow: {
+  typeRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
+    gap: 7,
   },
 
   type: {
-    color: COLORS.text,
-
-    fontSize: 13,
+    color: C.navy,
+    fontSize: 14,
     fontWeight: "900",
-
-    letterSpacing: 0.2,
   },
 
   defaultBadge: {
-    marginLeft: 7,
-
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-
-    borderRadius: 8,
-
-    backgroundColor: "#FFE3EF",
-
-    flexDirection: "row",
-    alignItems: "center",
+    backgroundColor: C.soft,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
 
   defaultText: {
-    marginLeft: 3,
-
-    color: COLORS.primary,
-
-    fontSize: 7,
+    color: C.primary,
+    fontSize: 8,
     fontWeight: "900",
-
-    letterSpacing: 0.4,
   },
 
   name: {
-    marginTop: 4,
-
-    color: COLORS.muted,
-
-    fontSize: 10.5,
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 5,
     fontWeight: "600",
   },
 
-  change: {
-    paddingHorizontal: 5,
-    paddingVertical: 8,
-
-    borderRadius: 8,
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    padding: 8,
   },
 
-  changePressed: {
-    backgroundColor: "#FFE3EF",
-  },
-
-  changeText: {
-    color: COLORS.primary,
-
+  editText: {
+    color: C.primary,
     fontSize: 11,
     fontWeight: "900",
   },
 
-  /* ADDRESS */
-
-  addressSection: {
-    marginTop: 14,
-
+  detailRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-  },
-
-  addressIcon: {
-    width: 26,
-    height: 26,
-
-    borderRadius: 9,
-
-    backgroundColor: "#F8F5F7",
-
-    alignItems: "center",
-    justifyContent: "center",
-
-    marginRight: 8,
+    gap: 11,
+    marginTop: 17,
+    paddingHorizontal: 3,
   },
 
   address: {
     flex: 1,
-
-    paddingTop: 2,
-
-    color: COLORS.textSecondary,
-
+    color: C.navy,
     fontSize: 11.5,
-    lineHeight: 18,
-  },
-
-  /* PHONE */
-
-  phoneRow: {
-    marginTop: 10,
-
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  phoneIcon: {
-    width: 26,
-    height: 26,
-
-    borderRadius: 9,
-
-    backgroundColor: "#FFE3EF",
-
-    alignItems: "center",
-    justifyContent: "center",
-
-    marginRight: 8,
+    lineHeight: 19,
+    fontWeight: "500",
   },
 
   phone: {
-    color: COLORS.muted,
-
-    fontSize: 10.5,
-    fontWeight: "600",
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: "700",
   },
 
-  /* SELECTED */
-
-  selectedRow: {
-    marginTop: 14,
-    paddingTop: 13,
-
-    borderTopWidth: 1,
-    borderTopColor: "#F0E5EA",
-
+  selectionRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 9,
+    marginTop: 17,
+    paddingTop: 13,
+    borderTopWidth: 1,
+    borderTopColor: "#F3EBEF",
   },
 
   radio: {
     width: 20,
     height: 20,
-
     borderRadius: 10,
-
     borderWidth: 1.5,
     borderColor: "#D8CDD2",
-
     alignItems: "center",
     justifyContent: "center",
   },
 
   radioSelected: {
-    borderColor: COLORS.primary,
+    borderColor: C.primary,
   },
 
   radioDot: {
     width: 10,
     height: 10,
-
     borderRadius: 5,
-
-    backgroundColor: COLORS.primary,
+    backgroundColor: C.primary,
   },
 
-  selectedText: {
+  selectionText: {
     flex: 1,
-
-    marginLeft: 8,
-
-    color: COLORS.text,
-
-    fontSize: 10.5,
-    fontWeight: "800",
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: "700",
   },
 
-  selectedBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-
-    borderRadius: 9,
-
-    backgroundColor: COLORS.primary,
-
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  selectedBadgeText: {
-    marginLeft: 3,
-
-    color: COLORS.white,
-
-    fontSize: 7,
+  selectionTextActive: {
+    color: C.primary,
     fontWeight: "900",
-
-    letterSpacing: 0.3,
   },
 });

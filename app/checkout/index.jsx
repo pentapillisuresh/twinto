@@ -1,5 +1,5 @@
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,15 +7,14 @@ import {
   StyleSheet,
   Text,
   View,
+  StatusBar,
+  Platform,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 
-import AppHeader from "../../components/common/AppHeader";
 import AddressCard from "../../components/checkout/AddressCard";
 import BillDetails from "../../components/checkout/BillDetails";
 import TipSelector from "../../components/checkout/TipSelector";
@@ -24,9 +23,24 @@ import { COLORS } from "../../constants";
 import { useCart } from "../../context";
 import { getAddresses } from "../../services/addressService";
 
+const PREMIUM = {
+  primary: "#C9004F",
+  primaryDark: "#A90042",
+  navy: "#172033",
+  white: "#FFFFFF",
+  background: "#FFF9FB",
+  pinkSoft: "#FFF0F5",
+  pinkLight: "#FDE3EC",
+  border: "#E9DDE2",
+  muted: "#858B95",
+  gray: "#68717F",
+  gold: "#FFE19A",
+};
+
 export default function Checkout() {
   const insets = useSafeAreaInsets();
 
+  // ORIGINAL CART CONTEXT - UNCHANGED
   const {
     cart = [],
     itemCount = 0,
@@ -45,6 +59,7 @@ export default function Checkout() {
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // ORIGINAL ADDRESS API LOGIC - UNCHANGED
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -73,10 +88,10 @@ export default function Checkout() {
     }, [])
   );
 
-  // Preserve existing address selection behavior.
+  // ORIGINAL ADDRESS SELECTION
   const address = addresses[0];
 
-  // Use the selected address's location ID for fee matching.
+  // ORIGINAL LOCATION MATCHING LOGIC
   const addressLocationId =
     address?.locationId ??
     address?.location?.id ??
@@ -92,6 +107,7 @@ export default function Checkout() {
     !selectedLocationId ||
     String(addressLocationId) === String(selectedLocationId);
 
+  // ORIGINAL FEE CALCULATIONS
   const displayedPlatformFee = platformFee;
   const displayedDeliveryFee = deliveryFee;
 
@@ -105,19 +121,111 @@ export default function Checkout() {
 
   const hasItems = cart.length > 0;
 
+  // FULL WIDTH HEADER SAFE AREA HANDLING
+  const topInset =
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" && Platform.Version >= 35)
+      ? insets.top
+      : 0;
+
+  // PREMIUM FIXED HEADER
+  function renderHeader() {
+    return (
+      <View
+        style={[
+          styles.headerBackground,
+          {
+            paddingTop: topInset + 16,
+          },
+        ]}
+      >
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
+
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={21}
+              color={PREMIUM.white}
+            />
+          </Pressable>
+
+          <View style={styles.headerTitleBox}>
+            <Text style={styles.headerTitle}>
+              Checkout
+            </Text>
+
+            <Text style={styles.headerSubtitle}>
+              Review your order details
+            </Text>
+          </View>
+
+          <View style={styles.headerSide} />
+        </View>
+
+        <View style={styles.headerInfo}>
+          <View style={styles.headerInfoIcon}>
+            <Ionicons
+              name="bag-check-outline"
+              size={20}
+              color={PREMIUM.gold}
+            />
+          </View>
+
+          <View style={styles.headerInfoContent}>
+            <Text style={styles.headerInfoTitle}>
+              Almost there!
+            </Text>
+
+            <Text style={styles.headerInfoSubtitle}>
+              {itemCount}{" "}
+              {itemCount === 1 ? "item" : "items"} in your order
+            </Text>
+          </View>
+
+          <View style={styles.headerInfoBadge}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color={PREMIUM.white}
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ORIGINAL EMPTY CART CONDITION
   if (!hasItems) {
     return (
-      <SafeAreaView
-        style={styles.container}
-        edges={["top", "left", "right"]}
-      >
+      <View style={styles.container}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={PREMIUM.primary}
+          translucent={
+            Platform.OS === "android" &&
+            Platform.Version >= 35
+          }
+        />
+
+        {renderHeader()}
+
         <View style={styles.empty}>
-          <View style={styles.emptyIcon}>
-            <Ionicons
-              name="cart-outline"
-              size={34}
-              color={COLORS.primary}
-            />
+          <View style={styles.emptyIconOuter}>
+            <View style={styles.emptyIcon}>
+              <Ionicons
+                name="cart-outline"
+                size={36}
+                color={PREMIUM.primary}
+              />
+            </View>
           </View>
 
           <Text style={styles.emptyTitle}>
@@ -130,45 +238,64 @@ export default function Checkout() {
 
           <Pressable
             onPress={() => router.replace("/(tabs)")}
-            style={styles.emptyButton}
+            style={({ pressed }) => [
+              styles.emptyButton,
+              pressed && styles.pressed,
+            ]}
           >
+            <Ionicons
+              name="bag-outline"
+              size={18}
+              color={PREMIUM.white}
+            />
+
             <Text style={styles.emptyButtonText}>
               Continue Shopping
             </Text>
 
             <Ionicons
               name="arrow-forward"
-              size={18}
-              color={COLORS.white}
+              size={17}
+              color={PREMIUM.white}
             />
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView
-      style={styles.container}
-      edges={["top", "left", "right"]}
-    >
-      <AppHeader title="Checkout" />
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={PREMIUM.primary}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
+      />
 
+      {/* FIXED HEADER - DOES NOT SCROLL */}
+      {renderHeader()}
+
+      {/* ONLY CHECKOUT CONTENT SCROLLS */}
       <ScrollView
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scroll,
-          { paddingBottom: 150 + insets.bottom },
+          {
+            paddingBottom: 150 + insets.bottom,
+          },
         ]}
       >
-        {/* DELIVERY */}
-
+        {/* DELIVERY INFORMATION */}
         <View style={styles.deliveryCard}>
           <View style={styles.deliveryIcon}>
             <Ionicons
               name="flash"
               size={21}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
           </View>
 
@@ -180,7 +307,9 @@ export default function Checkout() {
 
               <View style={styles.fastBadge}>
                 <View style={styles.fastDot} />
-                <Text style={styles.fastText}>FAST</Text>
+                <Text style={styles.fastText}>
+                  FAST
+                </Text>
               </View>
             </View>
 
@@ -190,16 +319,18 @@ export default function Checkout() {
           </View>
         </View>
 
-        {/* FREE DELIVERY */}
+        {/* ORIGINAL FREE DELIVERY COMPONENT */}
+        <View style={styles.freeDeliveryWrap}>
+          <FreeDeliveryBanner
+            itemCount={itemCount}
+            freeDelivery={freeDelivery}
+          />
+        </View>
 
-        <FreeDeliveryBanner
-          itemCount={itemCount}
-          freeDelivery={freeDelivery}
-        />
-
-        {/* ADDRESS */}
-
+        {/* DELIVERY ADDRESS SECTION */}
         <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+
           <View style={styles.sectionTitleWrap}>
             <Text style={styles.sectionTitle}>
               Delivery Address
@@ -209,47 +340,82 @@ export default function Checkout() {
               Where should we deliver your order?
             </Text>
           </View>
+
+          <View style={styles.sectionIcon}>
+            <Ionicons
+              name="location-outline"
+              size={17}
+              color={PREMIUM.primary}
+            />
+          </View>
         </View>
 
+        {/* ORIGINAL ADDRESS LOGIC */}
         {loading ? (
           <View style={styles.addressLoading}>
             <ActivityIndicator
               size="small"
-              color={COLORS.primary}
-            />
-          </View>
-        ) : address ? (
-          <AddressCard
-            address={address}
-            selected={true}
-            onChange={() => router.push("/checkout/address")}
-          />
-        ) : (
-          <Pressable
-            style={styles.noAddress}
-            onPress={() => router.push("/checkout/add-address")}
-          >
-            <Ionicons
-              name="add-circle-outline"
-              size={22}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
 
-            <Text style={styles.noAddressText}>
-              Add a delivery address
+            <Text style={styles.addressLoadingText}>
+              Loading address...
             </Text>
+          </View>
+        ) : address ? (
+          <View style={styles.addressCardWrap}>
+            <AddressCard
+              address={address}
+              selected={true}
+              onChange={() =>
+                router.push("/checkout/address")
+              }
+            />
+          </View>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [
+              styles.noAddress,
+              pressed && styles.pressed,
+            ]}
+            onPress={() =>
+              router.push("/checkout/add-address")
+            }
+          >
+            <View style={styles.noAddressIcon}>
+              <Ionicons
+                name="add"
+                size={22}
+                color={PREMIUM.primary}
+              />
+            </View>
+
+            <View style={styles.noAddressContent}>
+              <Text style={styles.noAddressText}>
+                Add a delivery address
+              </Text>
+
+              <Text style={styles.noAddressSubtitle}>
+                Choose where to receive your order
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={PREMIUM.primary}
+            />
           </Pressable>
         )}
 
-        {/* LOCATION / MINIMUM ORDER */}
-
+        {/* ORIGINAL LOCATION / MINIMUM ORDER LOGIC */}
         {address && (
           <>
             {!locationMatchesAddress && (
               <View style={styles.locationWarning}>
                 <Ionicons
                   name="alert-circle-outline"
-                  size={19}
+                  size={20}
                   color="#B45309"
                 />
 
@@ -270,11 +436,11 @@ export default function Checkout() {
                         ? "checkmark-circle"
                         : "information-circle-outline"
                     }
-                    size={20}
+                    size={21}
                     color={
                       isMinimumOrderMet
                         ? "#15803D"
-                        : COLORS.primary
+                        : PREMIUM.primary
                     }
                   />
                 </View>
@@ -298,9 +464,10 @@ export default function Checkout() {
           </>
         )}
 
-        {/* PAYMENT */}
-
+        {/* PAYMENT SECTION */}
         <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+
           <View style={styles.sectionTitleWrap}>
             <Text style={styles.sectionTitle}>
               Payment
@@ -310,8 +477,17 @@ export default function Checkout() {
               Select payment method on next step
             </Text>
           </View>
+
+          <View style={styles.sectionIcon}>
+            <Ionicons
+              name="card-outline"
+              size={17}
+              color={PREMIUM.primary}
+            />
+          </View>
         </View>
 
+        {/* ORIGINAL PAYMENT NAVIGATION */}
         <Pressable
           onPress={() => router.push("/checkout/payment")}
           style={({ pressed }) => [
@@ -323,7 +499,7 @@ export default function Checkout() {
             <Ionicons
               name="wallet-outline"
               size={21}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
           </View>
 
@@ -340,21 +516,21 @@ export default function Checkout() {
           <View style={styles.chevronBox}>
             <Ionicons
               name="chevron-forward"
-              size={16}
-              color={COLORS.primary}
+              size={17}
+              color={PREMIUM.primary}
             />
           </View>
         </Pressable>
 
-        {/* TIP */}
+        {/* ORIGINAL TIP COMPONENT */}
+        <View style={styles.tipWrap}>
+          <TipSelector tip={tip} setTip={setTip} />
+        </View>
 
-        <TipSelector tip={tip} setTip={setTip} />
-
-        {/* BILL */}
-
+        {/* BILL DETAILS */}
         <View style={styles.billSection}>
           <View style={styles.billHeader}>
-            <View>
+            <View style={styles.billHeadingContent}>
               <Text style={styles.billTitle}>
                 Bill Details
               </Text>
@@ -367,12 +543,13 @@ export default function Checkout() {
             <View style={styles.billIcon}>
               <Ionicons
                 name="receipt-outline"
-                size={18}
-                color={COLORS.primary}
+                size={19}
+                color={PREMIUM.primary}
               />
             </View>
           </View>
 
+          {/* ORIGINAL BILL CALCULATIONS */}
           <BillDetails
             itemTotal={itemTotal}
             platformFee={displayedPlatformFee}
@@ -383,12 +560,13 @@ export default function Checkout() {
         </View>
       </ScrollView>
 
-      {/* BOTTOM BAR */}
-
+      {/* FIXED BOTTOM TOTAL BAR */}
       <View
         style={[
           styles.bottom,
-          { paddingBottom: Math.max(insets.bottom, 12) },
+          {
+            paddingBottom: Math.max(insets.bottom, 12),
+          },
         ]}
       >
         <View style={styles.bottomTotal}>
@@ -401,6 +579,7 @@ export default function Checkout() {
           </Text>
         </View>
 
+        {/* ORIGINAL CONTINUE NAVIGATION */}
         <Pressable
           onPress={() => router.push("/checkout/payment")}
           style={({ pressed }) => [
@@ -415,45 +594,182 @@ export default function Checkout() {
           <View style={styles.arrowCircle}>
             <Ionicons
               name="arrow-forward"
-              size={16}
-              color={COLORS.primary}
+              size={17}
+              color={PREMIUM.primary}
             />
           </View>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // PAGE
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PREMIUM.background,
+  },
+
+  scrollView: {
+    flex: 1,
   },
 
   scroll: {
-    paddingTop: 2,
+    paddingTop: 3,
   },
 
-  deliveryCard: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    minHeight: 76,
+  // FIXED FULL-WIDTH HEADER
+  headerBackground: {
+    backgroundColor: PREMIUM.primary,
+    paddingHorizontal: 18,
+    paddingBottom: 21,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    zIndex: 10,
+    elevation: 4,
+  },
+
+  headerCircleOne: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    right: -95,
+    top: -110,
+  },
+
+  headerCircleTwo: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    left: -65,
+    bottom: -60,
+  },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  headerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  headerSide: {
+    width: 44,
+    height: 44,
+  },
+
+  headerTitleBox: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+
+  headerTitle: {
+    color: PREMIUM.white,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+
+  headerSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 4,
+  },
+
+  headerInfo: {
+    marginTop: 19,
     paddingHorizontal: 13,
     paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: COLORS.white,
+    backgroundColor: "rgba(255,255,255,0.13)",
     borderWidth: 1,
-    borderColor: "#F0D5E1",
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 19,
     flexDirection: "row",
     alignItems: "center",
   },
 
+  headerInfoIcon: {
+    width: 41,
+    height: 41,
+    borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+
+  headerInfoContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  headerInfoTitle: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  headerInfoSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  headerInfoBadge: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+
+  // DELIVERY CARD
+  deliveryCard: {
+    marginHorizontal: 16,
+    marginTop: 17,
+    minHeight: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 21,
+    backgroundColor: PREMIUM.white,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#7A2949",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+
   deliveryIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 14,
-    backgroundColor: "#FFE3EF",
+    width: 47,
+    height: 47,
+    borderRadius: 24,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -470,23 +786,23 @@ const styles = StyleSheet.create({
   },
 
   deliveryTitle: {
-    color: COLORS.text,
+    color: PREMIUM.navy,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "800",
   },
 
   deliverySubtitle: {
     marginTop: 5,
-    color: COLORS.muted,
+    color: PREMIUM.muted,
     fontSize: 10,
   },
 
   fastBadge: {
     marginLeft: 7,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: "#FFE3EF",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 15,
+    backgroundColor: PREMIUM.pinkSoft,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -495,73 +811,137 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 3,
-    backgroundColor: COLORS.primary,
+    backgroundColor: PREMIUM.primary,
     marginRight: 4,
   },
 
   fastText: {
-    color: COLORS.primary,
-    fontSize: 7,
+    color: PREMIUM.primary,
+    fontSize: 8,
     fontWeight: "900",
   },
 
+  // FREE DELIVERY
+  freeDeliveryWrap: {
+    marginTop: 3,
+  },
+
+  // SECTION HEADERS
   sectionHeader: {
     marginHorizontal: 16,
-    marginTop: 23,
-    marginBottom: 11,
+    marginTop: 25,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sectionAccent: {
+    width: 4,
+    height: 36,
+    borderRadius: 3,
+    backgroundColor: PREMIUM.primary,
+    marginRight: 11,
   },
 
   sectionTitleWrap: {
-    paddingLeft: 1,
+    flex: 1,
   },
 
   sectionTitle: {
-    color: COLORS.text,
+    color: PREMIUM.navy,
     fontSize: 17,
     fontWeight: "900",
+    letterSpacing: -0.3,
   },
 
   sectionSubtitle: {
     marginTop: 4,
-    color: COLORS.muted,
-    fontSize: 10.5,
+    color: PREMIUM.muted,
+    fontSize: 10,
   },
 
-  addressLoading: {
-    padding: 20,
-    alignItems: "center",
-  },
-
-  noAddress: {
-    marginHorizontal: 16,
-    padding: 16,
+  sectionIcon: {
+    width: 35,
+    height: 35,
     borderRadius: 18,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: "row",
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  noAddressText: {
-    color: COLORS.primary,
-    fontWeight: "900",
-    fontSize: 13,
-    marginLeft: 8,
+  // ADDRESS
+  addressLoading: {
+    marginHorizontal: 16,
+    minHeight: 78,
+    backgroundColor: PREMIUM.white,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 10,
   },
 
+  addressLoadingText: {
+    color: PREMIUM.muted,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  addressCardWrap: {
+    borderRadius: 20,
+  },
+
+  noAddress: {
+    marginHorizontal: 16,
+    minHeight: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 21,
+    backgroundColor: PREMIUM.white,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  noAddressIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: PREMIUM.pinkSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  noAddressContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  noAddressText: {
+    color: PREMIUM.primary,
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
+  noAddressSubtitle: {
+    color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  // LOCATION WARNING
   locationWarning: {
     marginHorizontal: 16,
     marginTop: 12,
-    padding: 12,
-    borderRadius: 13,
+    padding: 13,
+    borderRadius: 17,
     backgroundColor: "#FFFBEB",
     borderWidth: 1,
     borderColor: "#FDE68A",
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8,
+    gap: 9,
   },
 
   locationWarningText: {
@@ -572,203 +952,242 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  // MINIMUM ORDER
   minimumOrderCard: {
     marginHorizontal: 16,
     marginTop: 12,
     padding: 13,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
+    borderRadius: 19,
+    backgroundColor: PREMIUM.white,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
+    borderColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
   },
 
   minimumOrderIcon: {
-    width: 35,
-    height: 35,
-    borderRadius: 11,
-    backgroundColor: "#FFF0F5",
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   minimumOrderContent: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 11,
   },
 
   minimumOrderTitle: {
-    color: COLORS.text,
+    color: PREMIUM.navy,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
   },
 
   minimumOrderSubtitle: {
-    color: COLORS.muted,
+    color: PREMIUM.muted,
     fontSize: 10,
-    marginTop: 4,
+    marginTop: 5,
   },
 
+  // PAYMENT CARD
   paymentCard: {
     marginHorizontal: 16,
-    minHeight: 70,
-    paddingHorizontal: 13,
+    minHeight: 76,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 17,
-    backgroundColor: COLORS.white,
+    borderRadius: 21,
+    backgroundColor: PREMIUM.white,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
+    borderColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
+    shadowColor: "#7A2949",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
 
   paymentIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 13,
-    backgroundColor: "#FFE3EF",
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   paymentContent: {
     flex: 1,
-    marginLeft: 11,
+    marginLeft: 12,
     marginRight: 8,
   },
 
   paymentTitle: {
-    color: COLORS.text,
-    fontSize: 12.5,
-    fontWeight: "900",
+    color: PREMIUM.navy,
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   paymentSubtitle: {
     marginTop: 4,
-    color: COLORS.muted,
+    color: PREMIUM.muted,
     fontSize: 10,
   },
 
   chevronBox: {
-    width: 29,
-    height: 29,
-    borderRadius: 10,
-    backgroundColor: "#FFE3EF",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  pressed: {
-    opacity: 0.75,
-    transform: [{ scale: 0.99 }],
+  // TIP SECTION
+  tipWrap: {
+    marginTop: 5,
   },
 
+  // BILL DETAILS
   billSection: {
     marginHorizontal: 16,
     marginTop: 24,
     padding: 15,
-    borderRadius: 18,
-    backgroundColor: COLORS.white,
+    borderRadius: 22,
+    backgroundColor: PREMIUM.white,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
+    borderColor: PREMIUM.border,
+    shadowColor: "#7A2949",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
 
   billHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 7,
+    marginBottom: 9,
+  },
+
+  billHeadingContent: {
+    flex: 1,
   },
 
   billTitle: {
-    color: COLORS.text,
-    fontSize: 15,
+    color: PREMIUM.navy,
+    fontSize: 16,
     fontWeight: "900",
   },
 
   billSubtitle: {
-    marginTop: 3,
-    color: COLORS.muted,
-    fontSize: 9.5,
+    marginTop: 4,
+    color: PREMIUM.muted,
+    fontSize: 10,
   },
 
   billIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: "#FFE3EF",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
+  // FIXED BOTTOM BAR
   bottom: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    minHeight: 76,
+    minHeight: 78,
     paddingHorizontal: 16,
-    paddingTop: 11,
-    backgroundColor: COLORS.white,
+    paddingTop: 12,
+    backgroundColor: PREMIUM.white,
     borderTopWidth: 1,
-    borderTopColor: "#EEDFE5",
+    borderTopColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     elevation: 10,
+    shadowColor: PREMIUM.navy,
+    shadowOffset: {
+      width: 0,
+      height: -3,
+    },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
   },
 
   bottomTotal: {
     flex: 1,
+    minWidth: 0,
+    marginRight: 10,
   },
 
   totalLabel: {
-    color: COLORS.muted,
+    color: PREMIUM.muted,
     fontSize: 10,
     fontWeight: "700",
   },
 
   total: {
-    marginTop: 2,
-    color: COLORS.text,
+    marginTop: 4,
+    color: PREMIUM.navy,
     fontSize: 21,
     fontWeight: "900",
   },
 
   continue: {
-    minWidth: 145,
-    height: 50,
+    minWidth: 150,
+    height: 52,
     paddingLeft: 20,
     paddingRight: 7,
-    borderRadius: 16,
-    backgroundColor: COLORS.primary,
+    borderRadius: 27,
+    backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
   continuePressed: {
-    opacity: 0.88,
+    opacity: 0.85,
     transform: [{ scale: 0.98 }],
   },
 
   continueText: {
-    color: COLORS.white,
-    fontSize: 14,
+    color: PREMIUM.white,
+    fontSize: 13,
     fontWeight: "900",
-    marginRight: 10,
+    marginRight: 12,
   },
 
   arrowCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
   },
 
+  pressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
+  },
+
+  // EMPTY CART
   empty: {
     flex: 1,
     paddingHorizontal: 30,
@@ -776,48 +1195,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  emptyIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 25,
-    backgroundColor: "#FFE3EF",
+  emptyIconOuter: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: 20,
+  },
+
+  emptyIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: PREMIUM.white,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   emptyTitle: {
-    color: COLORS.text,
-    fontSize: 22,
+    color: PREMIUM.navy,
+    fontSize: 21,
     fontWeight: "900",
     textAlign: "center",
   },
 
   emptySubtitle: {
-    color: COLORS.muted,
+    color: PREMIUM.muted,
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 19,
     textAlign: "center",
-    marginTop: 7,
+    marginTop: 8,
     maxWidth: 280,
   },
 
   emptyButton: {
-    marginTop: 22,
-    minWidth: 190,
-    height: 50,
-    paddingHorizontal: 18,
-    borderRadius: 15,
-    backgroundColor: COLORS.primary,
+    marginTop: 23,
+    minWidth: 205,
+    height: 52,
+    paddingHorizontal: 19,
+    borderRadius: 27,
+    backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 9,
   },
 
   emptyButtonText: {
-    color: COLORS.white,
-    fontSize: 13,
+    color: PREMIUM.white,
+    fontSize: 12,
     fontWeight: "900",
-    marginRight: 9,
   },
 });

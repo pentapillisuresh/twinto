@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 
 import {
@@ -7,29 +8,39 @@ import {
   Text,
   TouchableOpacity,
   View,
+  StatusBar,
+  Platform,
 } from "react-native";
 
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
-
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-
 import { useRouter } from "expo-router";
 
 import { COLORS } from "../../constants";
-
 import { getOrders } from "../../services/orderService";
+
+const PREMIUM = {
+  primary: "#C9004F",
+  primaryDark: "#A90042",
+  navy: "#172033",
+  white: "#FFFFFF",
+  background: "#FFF9FB",
+  pinkSoft: "#FFF0F5",
+  pinkLight: "#FDE3EC",
+  border: "#E9DDE2",
+  muted: "#858B95",
+  gray: "#68717F",
+  gold: "#FFE19A",
+};
 
 export default function OrdersScreen() {
   const router = useRouter();
-
   const insets = useSafeAreaInsets();
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // ORIGINAL API LOGIC
   useEffect(() => {
     loadOrders();
   }, []);
@@ -37,7 +48,6 @@ export default function OrdersScreen() {
   async function loadOrders() {
     try {
       const data = await getOrders();
-
       setOrders(data);
     } catch (error) {
       console.log("Orders error:", error);
@@ -46,6 +56,7 @@ export default function OrdersScreen() {
     }
   }
 
+  // ORIGINAL STATUS LOGIC
   function getStatusIcon(status) {
     if (status === "Delivered") {
       return "checkmark-circle";
@@ -86,11 +97,89 @@ export default function OrdersScreen() {
     return "#F8E8EF";
   }
 
-  function renderOrder({ item }) {
-    const statusColor = getStatusColor(
-      item.status
-    );
+  // SAME TOP INSET HANDLING AS CART
+  const topInset =
+    Platform.OS === "ios"
+      ? insets.top
+      : Platform.Version >= 35
+      ? insets.top
+      : 0;
 
+  // FIXED PREMIUM HEADER
+  function renderHeader() {
+    return (
+      <View
+        style={[
+          styles.headerBackground,
+          { paddingTop: topInset + 18 },
+        ]}
+      >
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
+
+        <View style={styles.headerRow}>
+          <View style={styles.headerSide} />
+
+          <View style={styles.headerTitleBox}>
+            <Text style={styles.headerTitle}>
+              My Orders
+            </Text>
+
+            <Text style={styles.headerSubtitle}>
+              Your grocery order history
+            </Text>
+          </View>
+
+          <View style={styles.headerSide} />
+        </View>
+
+        <View style={styles.headerInfo}>
+          <View style={styles.headerInfoIcon}>
+            <Ionicons
+              name="receipt-outline"
+              size={20}
+              color={PREMIUM.gold}
+            />
+          </View>
+
+          <View style={styles.headerInfoContent}>
+            <Text style={styles.headerInfoTitle}>
+              {loading
+                ? "Loading your orders"
+                : orders.length === 0
+                ? "Your orders will appear here"
+                : `${orders.length} ${
+                    orders.length === 1
+                      ? "order"
+                      : "orders"
+                  } in your history`}
+            </Text>
+
+            <Text style={styles.headerInfoSubtitle}>
+              Track and review your purchases
+            </Text>
+          </View>
+
+          <View style={styles.headerInfoBadge}>
+            {loading ? (
+              <ActivityIndicator
+                size="small"
+                color={PREMIUM.white}
+              />
+            ) : (
+              <Text style={styles.headerCount}>
+                {orders.length}
+              </Text>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ORIGINAL ORDER CARD LOGIC WITH PREMIUM UI
+  function renderOrder({ item }) {
+    const statusColor = getStatusColor(item.status);
     const statusBackground =
       getStatusBackground(item.status);
 
@@ -102,22 +191,24 @@ export default function OrdersScreen() {
           router.push(`/order/${item.id}`)
         }
       >
-        {/* TOP */}
-
+        {/* ORDER TOP ROW */}
         <View style={styles.topRow}>
           <View style={styles.orderHeading}>
             <View style={styles.orderIcon}>
               <Ionicons
                 name="receipt-outline"
-                size={17}
-                color={COLORS.primary}
+                size={18}
+                color={PREMIUM.primary}
               />
             </View>
 
             <View style={styles.orderHeadingText}>
-          <Text style={styles.orderId}>
-  Order #{item.orderNumber || item.id}
-</Text>
+              <Text
+                style={styles.orderId}
+                numberOfLines={1}
+              >
+                Order #{item.orderNumber || item.id}
+              </Text>
 
               <Text style={styles.date}>
                 {item.date}
@@ -125,46 +216,40 @@ export default function OrdersScreen() {
             </View>
           </View>
 
+          {/* STATUS */}
           <View
             style={[
               styles.statusBadge,
-              {
-                backgroundColor:
-                  statusBackground,
-              },
+              { backgroundColor: statusBackground },
             ]}
           >
             <Ionicons
               name={getStatusIcon(item.status)}
-              size={14}
+              size={13}
               color={statusColor}
             />
 
             <Text
               style={[
                 styles.statusText,
-                {
-                  color: statusColor,
-                },
+                { color: statusColor },
               ]}
+              numberOfLines={2}
             >
               {item.status}
             </Text>
           </View>
         </View>
 
-        {/* DIVIDER */}
-
         <View style={styles.divider} />
 
-        {/* PRODUCTS */}
-
+        {/* ORDER PRODUCTS */}
         <View style={styles.itemsRow}>
           <View style={styles.itemsIcon}>
             <Ionicons
               name="bag-handle-outline"
               size={21}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
           </View>
 
@@ -186,15 +271,12 @@ export default function OrdersScreen() {
               numberOfLines={1}
             >
               {item.items
-                ?.map(
-                  (product) =>
-                    product.productName
-                )
-                .join(", ") ||
-                "Order details"}
+                ?.map((product) => product.productName)
+                .join(", ") || "Order details"}
             </Text>
           </View>
 
+          {/* ORDER TOTAL */}
           <View style={styles.priceContainer}>
             <Text style={styles.totalLabel}>
               TOTAL
@@ -206,14 +288,13 @@ export default function OrdersScreen() {
           </View>
         </View>
 
-        {/* BOTTOM */}
-
+        {/* ORDER BOTTOM */}
         <View style={styles.bottomRow}>
           <View style={styles.deliveryInfo}>
             <Ionicons
               name="location-outline"
-              size={13}
-              color={COLORS.muted}
+              size={14}
+              color={PREMIUM.muted}
             />
 
             <Text
@@ -234,7 +315,7 @@ export default function OrdersScreen() {
               <Ionicons
                 name="arrow-forward"
                 size={13}
-                color={COLORS.primary}
+                color={PREMIUM.primary}
               />
             </View>
           </View>
@@ -243,70 +324,43 @@ export default function OrdersScreen() {
     );
   }
 
-  /* LOADING */
+  return (
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={PREMIUM.primary}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
+      />
 
-  if (loading) {
-    return (
-      <SafeAreaView
-        style={styles.loading}
-        edges={[
-          "top",
-          "bottom",
-          "left",
-          "right",
-        ]}
-      >
-        <View style={styles.loadingIcon}>
-          <ActivityIndicator
-            size="small"
-            color={COLORS.primary}
-          />
-        </View>
+      {/* HEADER DOES NOT SCROLL */}
+      {renderHeader()}
 
-        <Text style={styles.loadingText}>
-          Loading your orders...
-        </Text>
-      </SafeAreaView>
-    );
-  }
-
-  /* EMPTY */
-
-  if (orders.length === 0) {
-    return (
-      <SafeAreaView
-        style={styles.container}
-        edges={["top", "left", "right"]}
-      >
-        {/* HEADER */}
-
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Ionicons
-              name="receipt-outline"
-              size={21}
-              color={COLORS.primary}
+      {/* LOADING */}
+      {loading ? (
+        <View style={styles.loading}>
+          <View style={styles.loadingIcon}>
+            <ActivityIndicator
+              size="small"
+              color={PREMIUM.primary}
             />
           </View>
 
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>
-              My Orders
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Your grocery order history
-            </Text>
-          </View>
+          <Text style={styles.loadingText}>
+            Loading your orders...
+          </Text>
         </View>
-
+      ) : orders.length === 0 ? (
+        /* EMPTY ORDERS */
         <View style={styles.empty}>
           <View style={styles.emptyIconOuter}>
             <View style={styles.emptyIcon}>
               <Ionicons
                 name="receipt-outline"
-                size={38}
-                color={COLORS.primary}
+                size={39}
+                color={PREMIUM.primary}
               />
             </View>
           </View>
@@ -342,573 +396,453 @@ export default function OrdersScreen() {
             />
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  /* ORDERS */
-
-  return (
-    <SafeAreaView
-      style={styles.container}
-      edges={["top", "left", "right"]}
-    >
-      {/* PREMIUM TOP HEADER */}
-
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Ionicons
-            name="receipt-outline"
-            size={21}
-            color={COLORS.primary}
-          />
-        </View>
-
-        <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>
-            My Orders
-          </Text>
-
-          <Text style={styles.headerSubtitle}>
-            Your grocery order history
-          </Text>
-        </View>
-
-        <View style={styles.orderCountBadge}>
-          <Text style={styles.orderCountText}>
-            {orders.length}
-          </Text>
-        </View>
-      </View>
-
-      {/* LIST */}
-
-      <FlatList
-        data={orders}
-        keyExtractor={(item) =>
-          String(item.id)
-        }
-        renderItem={renderOrder}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.list,
-          {
-            paddingBottom:
-              90 + insets.bottom,
-          },
-        ]}
-      />
-    </SafeAreaView>
+      ) : (
+        /* ORIGINAL FLATLIST */
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderOrder}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.list,
+            {
+              paddingBottom: 90 + insets.bottom,
+            },
+          ]}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  /* PAGE */
-
+  // PAGE
   container: {
     flex: 1,
-
-    backgroundColor: COLORS.background,
+    backgroundColor: PREMIUM.background,
   },
 
-  /* HEADER */
+  // FIXED FULL-WIDTH HEADER
+  headerBackground: {
+    backgroundColor: PREMIUM.primary,
+    paddingHorizontal: 18,
+    paddingBottom: 22,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    overflow: "hidden",
+    zIndex: 10,
+    elevation: 4,
+  },
 
-  header: {
-    height: 76,
+  headerCircleOne: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    right: -95,
+    top: -110,
+  },
 
-    paddingHorizontal: 16,
+  headerCircleTwo: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    left: -65,
+    bottom: -60,
+  },
 
-    backgroundColor: COLORS.white,
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
 
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEDFE5",
+  headerSide: {
+    width: 42,
+  },
 
+  headerTitleBox: {
+    flex: 1,
+    alignItems: "center",
+  },
+
+  headerTitle: {
+    color: PREMIUM.white,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+
+  headerSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 3,
+  },
+
+  headerInfo: {
+    marginTop: 19,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 17,
     flexDirection: "row",
     alignItems: "center",
   },
 
-  headerIcon: {
-    width: 44,
-    height: 44,
-
-    borderRadius: 14,
-
-    backgroundColor: "#FFE3EF",
-
+  headerInfoIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.13)",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 11,
   },
 
-  headerText: {
+  headerInfoContent: {
     flex: 1,
-
-    marginLeft: 11,
+    minWidth: 0,
   },
 
-  headerTitle: {
-    color: COLORS.text,
-
-    fontSize: 19,
-    fontWeight: "900",
-
-    letterSpacing: -0.4,
+  headerInfoTitle: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
   },
 
-  headerSubtitle: {
-    color: COLORS.muted,
-
-    fontSize: 9.5,
-    fontWeight: "600",
-
-    marginTop: 3,
+  headerInfoSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
   },
 
-  orderCountBadge: {
-    minWidth: 32,
-    height: 32,
-
-    paddingHorizontal: 8,
-
-    borderRadius: 11,
-
-    backgroundColor: COLORS.primary,
-
+  headerInfoBadge: {
+    minWidth: 29,
+    height: 29,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.17)",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 6,
+    marginLeft: 8,
   },
 
-  orderCountText: {
-    color: COLORS.white,
-
-    fontSize: 10,
+  headerCount: {
+    color: PREMIUM.white,
+    fontSize: 12,
     fontWeight: "900",
   },
 
-  /* LIST */
-
+  // LIST
   list: {
-    paddingHorizontal: 16,
-
-    paddingTop: 14,
+    paddingHorizontal: 15,
+    paddingTop: 17,
   },
 
-  /* ORDER CARD */
-
+  // ORDER CARD
   orderCard: {
-    backgroundColor: COLORS.white,
-
+    backgroundColor: PREMIUM.white,
     borderRadius: 19,
-
     padding: 14,
-
-    marginBottom: 12,
-
+    marginBottom: 13,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
-
-    shadowColor: "#000",
-
+    borderColor: PREMIUM.border,
+    shadowColor: "#7A2949",
     shadowOffset: {
       width: 0,
       height: 3,
     },
-
-    shadowOpacity: 0.035,
-    shadowRadius: 9,
-
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
   },
 
-  /* TOP ROW */
-
   topRow: {
     flexDirection: "row",
-
     alignItems: "center",
-
     justifyContent: "space-between",
   },
 
   orderHeading: {
     flex: 1,
-
     flexDirection: "row",
-
     alignItems: "center",
-
     marginRight: 8,
+    minWidth: 0,
   },
 
   orderIcon: {
     width: 40,
     height: 40,
-
-    borderRadius: 12,
-
-    backgroundColor: "#FFE3EF",
-
+    borderRadius: 13,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   orderHeadingText: {
     flex: 1,
-
     marginLeft: 9,
   },
 
   orderId: {
-    color: COLORS.text,
-
-    fontSize: 13.5,
-    fontWeight: "900",
-
-    letterSpacing: -0.1,
+    color: PREMIUM.navy,
+    fontSize: 12,
+    fontWeight: "800",
   },
 
   date: {
-    color: COLORS.muted,
-
-    fontSize: 9.5,
-
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginTop: 4,
   },
 
-  /* STATUS */
-
   statusBadge: {
-    maxWidth: 145,
-
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-
-    borderRadius: 9,
-
+    maxWidth: 135,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
-
     alignSelf: "flex-start",
   },
 
   statusText: {
     marginLeft: 5,
-
-    fontSize: 8.5,
-    fontWeight: "900",
-
-    textAlign: "right",
+    fontSize: 9,
+    fontWeight: "800",
+    flexShrink: 1,
   },
-
-  /* DIVIDER */
 
   divider: {
     height: 1,
-
-    backgroundColor: "#F0E5EA",
-
-    marginVertical: 13,
+    backgroundColor: PREMIUM.border,
+    marginVertical: 14,
   },
-
-  /* ITEMS */
 
   itemsRow: {
     flexDirection: "row",
-
     alignItems: "center",
   },
 
   itemsIcon: {
     width: 43,
     height: 43,
-
     borderRadius: 13,
-
-    backgroundColor: "#FFE3EF",
-
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   itemsInfo: {
     flex: 1,
-
     marginLeft: 10,
-
     marginRight: 8,
+    minWidth: 0,
   },
 
   productsTitleRow: {
     flexDirection: "row",
-
     alignItems: "center",
   },
 
   itemsTitle: {
-    color: COLORS.text,
-
-    fontSize: 11.5,
-    fontWeight: "900",
+    color: PREMIUM.navy,
+    fontSize: 12,
+    fontWeight: "800",
   },
 
   itemsCount: {
     minWidth: 20,
     height: 20,
-
     paddingHorizontal: 5,
-
     borderRadius: 7,
-
-    backgroundColor: "#FFF0F6",
-
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-
     marginLeft: 6,
   },
 
   itemsCountText: {
-    color: COLORS.primary,
-
-    fontSize: 7.5,
-    fontWeight: "900",
+    color: PREMIUM.primary,
+    fontSize: 9,
+    fontWeight: "800",
   },
 
   itemsSubtitle: {
-    color: COLORS.muted,
-
-    fontSize: 9,
-
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginTop: 4,
   },
 
-  /* PRICE */
-
   priceContainer: {
     minWidth: 57,
-
     alignItems: "flex-end",
   },
 
   totalLabel: {
-    color: COLORS.muted,
-
-    fontSize: 6.5,
-    fontWeight: "900",
-
-    letterSpacing: 0.7,
+    color: PREMIUM.muted,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
 
   total: {
-    color: COLORS.text,
-
+    color: PREMIUM.navy,
     fontSize: 15,
     fontWeight: "900",
-
-    marginTop: 3,
+    marginTop: 4,
   },
-
-  /* BOTTOM ROW */
 
   bottomRow: {
     marginTop: 13,
-
     paddingTop: 11,
-
     borderTopWidth: 1,
-    borderTopColor: "#F0E5EA",
-
+    borderTopColor: PREMIUM.border,
     flexDirection: "row",
-
     alignItems: "center",
-
     justifyContent: "space-between",
   },
 
   deliveryInfo: {
     flex: 1,
-
     flexDirection: "row",
-
     alignItems: "center",
-
     marginRight: 8,
   },
 
   deliveryText: {
-    color: COLORS.muted,
-
-    fontSize: 8.5,
-
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginLeft: 5,
+    flexShrink: 1,
   },
 
   viewOrder: {
     flexDirection: "row",
-
     alignItems: "center",
   },
 
   viewText: {
-    color: COLORS.primary,
-
-    fontSize: 9.5,
-    fontWeight: "900",
+    color: PREMIUM.primary,
+    fontSize: 10,
+    fontWeight: "800",
   },
 
   arrowBox: {
-    width: 25,
-    height: 25,
-
-    borderRadius: 8,
-
-    backgroundColor: "#FFE3EF",
-
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-
     marginLeft: 6,
   },
 
-  /* LOADING */
-
+  // LOADING
   loading: {
     flex: 1,
-
-    backgroundColor: COLORS.background,
-
     alignItems: "center",
     justifyContent: "center",
   },
 
   loadingIcon: {
-    width: 50,
-    height: 50,
-
-    borderRadius: 16,
-
-    backgroundColor: "#FFE3EF",
-
+    width: 54,
+    height: 54,
+    borderRadius: 17,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   loadingText: {
-    marginTop: 11,
-
-    color: COLORS.muted,
-
-    fontSize: 10,
-
+    marginTop: 12,
+    color: PREMIUM.muted,
+    fontSize: 11,
     fontWeight: "700",
   },
 
-  /* EMPTY */
-
+  // EMPTY STATE
   empty: {
     flex: 1,
-
     alignItems: "center",
     justifyContent: "center",
-
     paddingHorizontal: 30,
-
-    paddingBottom: 80,
+    paddingBottom: 70,
   },
 
   emptyIconOuter: {
-    width: 102,
-    height: 102,
-
-    borderRadius: 34,
-
-    backgroundColor: "#FFE3EF",
-
+    width: 112,
+    height: 112,
+    borderRadius: 36,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   emptyIcon: {
-    width: 76,
-    height: 76,
-
-    borderRadius: 25,
-
-    backgroundColor: COLORS.white,
-
+    width: 80,
+    height: 80,
+    borderRadius: 26,
+    backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
-
-    shadowColor: COLORS.primary,
-
+    shadowColor: PREMIUM.primary,
     shadowOffset: {
       width: 0,
       height: 4,
     },
-
     shadowOpacity: 0.08,
     shadowRadius: 8,
-
     elevation: 2,
   },
 
   emptyTitle: {
-    color: COLORS.text,
-
-    fontSize: 21,
+    color: PREMIUM.navy,
+    fontSize: 20,
     fontWeight: "900",
-
     marginTop: 19,
   },
 
   emptyText: {
     maxWidth: 290,
-
-    color: COLORS.muted,
-
-    fontSize: 11.5,
-
-    lineHeight: 18,
-
+    color: PREMIUM.muted,
+    fontSize: 12,
+    lineHeight: 19,
     textAlign: "center",
-
-    marginTop: 7,
+    marginTop: 8,
   },
 
   shopButton: {
     minWidth: 190,
     height: 50,
-
     paddingHorizontal: 17,
-
     borderRadius: 15,
-
-    backgroundColor: COLORS.primary,
-
+    backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-
-    marginTop: 22,
-
-    shadowColor: COLORS.primary,
-
+    marginTop: 23,
+    shadowColor: PREMIUM.primary,
     shadowOffset: {
       width: 0,
       height: 5,
     },
-
     shadowOpacity: 0.18,
     shadowRadius: 9,
-
     elevation: 4,
   },
 
   shopButtonText: {
-    color: COLORS.white,
-
-    fontSize: 12.5,
+    color: PREMIUM.white,
+    fontSize: 12,
     fontWeight: "900",
-
     marginHorizontal: 10,
   },
 });

@@ -7,7 +7,7 @@
     "scheme": "twinto",
     "userInterfaceStyle": "light",
 
-    "icon": "./assets/images/logo1.png",
+    "icon": "./assets/images/twintologo512.png",
 
     "plugins": [
       "expo-router",
@@ -17,7 +17,7 @@
     "android": {
       "package": "com.twinto.grocery",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo1.png",
+        "foregroundImage": "./assets/images/twintologo512.png",
         "backgroundColor": "#FFFFFF"
       }
     }

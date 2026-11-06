@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -24,6 +25,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { sendOtp, verifyOtp } from "../../services/authService";
 
 import { useAuth } from "../../context";
+
+// ==========================================
+// LOGO
+// ==========================================
+
+// Assumes this file is in app/auth/ or a similar
+// two-level-deep folder, as in your existing imports.
+const LOGO = require("../../assets/images/logo1.png");
 
 // ==========================================
 // PREMIUM COLORS
@@ -211,8 +220,7 @@ export default function OTP() {
         );
       }
 
-      // Pass token and user to the existing auth context.
-      // File 7 will ensure this shape is supported.
+      // Pass token and user to existing auth context.
       await login(authData);
 
       setOtp("");
@@ -351,7 +359,8 @@ export default function OTP() {
             <View style={styles.circleLarge} />
             <View style={styles.circleSmall} />
 
-            <ImagePlaceholder />
+            {/* LOGO REPLACES ORIGINAL TEXT */}
+            <LogoArtwork />
 
             <Pressable
               onPress={changeNumber}
@@ -420,7 +429,8 @@ export default function OTP() {
                 const digit = otp[index] || "";
 
                 const active =
-                  index === Math.min(
+                  index ===
+                  Math.min(
                     otp.length,
                     OTP_LENGTH - 1
                   );
@@ -555,26 +565,19 @@ export default function OTP() {
 }
 
 // ==========================================
-// ORIGINAL HERO ARTWORK
+// LOGO ARTWORK
 // ==========================================
 
-function ImagePlaceholder() {
+function LogoArtwork() {
   return (
     <View style={styles.imageArea}>
       <View style={styles.imageCard}>
-        <Ionicons
-          name="bag-handle"
-          size={54}
-          color={PREMIUM.primary}
+        <Image
+          source={LOGO}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="TWINTO logo"
         />
-
-        <Text style={styles.imageBrand}>
-          TWINTO
-        </Text>
-
-        <Text style={styles.imageText}>
-          Fresh groceries
-        </Text>
       </View>
     </View>
   );
@@ -658,20 +661,12 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.08,
     shadowRadius: 10,
+    overflow: "hidden",
   },
 
-  imageBrand: {
-    marginTop: 8,
-    fontSize: 24,
-    fontWeight: "900",
-    color: PREMIUM.primary,
-  },
-
-  imageText: {
-    marginTop: 3,
-    fontSize: 12,
-    color: PREMIUM.muted,
-    fontWeight: "600",
+  logo: {
+    width: 185,
+    height: 185,
   },
 
   backButton: {

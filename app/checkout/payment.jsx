@@ -6,21 +6,36 @@ import {
   StyleSheet,
   Text,
   View,
+  StatusBar,
+  Platform,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import { COLORS } from "../../constants";
 import { useCart } from "../../context";
 
+const PREMIUM = {
+  primary: "#C9004F",
+  primaryDark: "#A90042",
+  navy: "#172033",
+  white: "#FFFFFF",
+  background: "#FFF9FB",
+  pinkSoft: "#FFF0F5",
+  pinkLight: "#FDE3EC",
+  border: "#E9DDE2",
+  muted: "#858B95",
+  gray: "#68717F",
+  gold: "#FFE19A",
+};
+
 export default function Payment() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // ORIGINAL CART CONTEXT - UNCHANGED
   const {
     itemTotal = 0,
     platformFee = 0,
@@ -29,9 +44,12 @@ export default function Payment() {
     total = 0,
   } = useCart();
 
+  // ONLY LOGIC CHANGE:
+  // DEFAULT PAYMENT IS NOW CASHFREE
   const [selectedPayment, setSelectedPayment] =
-    useState("COD");
+    useState("CASHFREE");
 
+  // ORIGINAL PAYMENT METHODS - UNCHANGED
   const paymentMethods = [
     {
       id: "CASHFREE",
@@ -48,6 +66,7 @@ export default function Payment() {
     },
   ];
 
+  // ORIGINAL NAVIGATION LOGIC - UNCHANGED
   const handleContinue = () => {
     router.push({
       pathname: "/checkout/review",
@@ -57,40 +76,93 @@ export default function Payment() {
     });
   };
 
-  return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "left", "right"]}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
-          onPress={() => router.back()}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={21}
-            color={COLORS.text}
-          />
-        </Pressable>
+  const topInset =
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" && Platform.Version >= 35)
+      ? insets.top
+      : 0;
 
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>
-            Payment
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            Choose your payment method
-          </Text>
+  return (
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={PREMIUM.primary}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
+      />
+
+      {/* FIXED PREMIUM HEADER */}
+      <View
+        style={[
+          styles.headerBackground,
+          { paddingTop: topInset + 16 },
+        ]}
+      >
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
+
+        <View style={styles.headerRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed && styles.backButtonPressed,
+            ]}
+            onPress={() => router.back()}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={21}
+              color={PREMIUM.white}
+            />
+          </Pressable>
+
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>
+              Payment
+            </Text>
+
+            <Text style={styles.headerSubtitle}>
+              Choose your payment method
+            </Text>
+          </View>
+
+          <View style={styles.headerSpacer} />
         </View>
 
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerInfo}>
+          <View style={styles.headerInfoIcon}>
+            <Ionicons
+              name="card-outline"
+              size={20}
+              color={PREMIUM.gold}
+            />
+          </View>
+
+          <View style={styles.headerInfoContent}>
+            <Text style={styles.headerInfoTitle}>
+              Secure Payment
+            </Text>
+
+            <Text style={styles.headerInfoSubtitle}>
+              Select how you want to pay
+            </Text>
+          </View>
+
+          <View style={styles.headerInfoBadge}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color={PREMIUM.white}
+            />
+          </View>
+        </View>
       </View>
 
+      {/* SCROLLABLE CONTENT */}
       <ScrollView
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.content,
@@ -99,14 +171,14 @@ export default function Payment() {
           },
         ]}
       >
-        {/* Payment Methods */}
+        {/* PAYMENT METHODS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIcon}>
               <Ionicons
                 name="wallet-outline"
-                size={18}
-                color={COLORS.primary}
+                size={19}
+                color={PREMIUM.primary}
               />
             </View>
 
@@ -114,6 +186,7 @@ export default function Payment() {
               <Text style={styles.sectionTitle}>
                 Select Payment Method
               </Text>
+
               <Text style={styles.sectionSubtitle}>
                 Choose how you want to pay for your order
               </Text>
@@ -133,17 +206,14 @@ export default function Payment() {
                   }
                   style={({ pressed }) => [
                     styles.paymentCard,
-                    selected &&
-                      styles.paymentCardSelected,
-                    pressed &&
-                      styles.paymentCardPressed,
+                    selected && styles.paymentCardSelected,
+                    pressed && styles.paymentCardPressed,
                   ]}
                 >
                   <View
                     style={[
                       styles.paymentIcon,
-                      selected &&
-                        styles.paymentIconSelected,
+                      selected && styles.paymentIconSelected,
                     ]}
                   >
                     <Ionicons
@@ -151,22 +221,28 @@ export default function Payment() {
                       size={21}
                       color={
                         selected
-                          ? COLORS.white
-                          : COLORS.primary
+                          ? PREMIUM.white
+                          : PREMIUM.primary
                       }
                     />
                   </View>
 
                   <View style={styles.paymentInfo}>
-                    <View
-                      style={styles.paymentTitleRow}
-                    >
+                    <View style={styles.paymentTitleRow}>
                       <Text
                         style={styles.paymentTitle}
                         numberOfLines={1}
                       >
                         {method.title}
                       </Text>
+
+                      {method.id === "CASHFREE" && (
+                        <View style={styles.recommendedBadge}>
+                          <Text style={styles.recommendedText}>
+                            ONLINE
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
                     <Text
@@ -180,14 +256,11 @@ export default function Payment() {
                   <View
                     style={[
                       styles.radioOuter,
-                      selected &&
-                        styles.radioOuterSelected,
+                      selected && styles.radioOuterSelected,
                     ]}
                   >
                     {selected && (
-                      <View
-                        style={styles.radioInner}
-                      />
+                      <View style={styles.radioInner} />
                     )}
                   </View>
                 </Pressable>
@@ -196,13 +269,13 @@ export default function Payment() {
           </View>
         </View>
 
-        {/* Security Information */}
+        {/* SECURITY INFORMATION */}
         <View style={styles.securityCard}>
           <View style={styles.securityIcon}>
             <Ionicons
               name="shield-checkmark-outline"
               size={21}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
           </View>
 
@@ -215,9 +288,10 @@ export default function Payment() {
               <View style={styles.secureBadge}>
                 <Ionicons
                   name="lock-closed"
-                  size={9}
-                  color={COLORS.primary}
+                  size={10}
+                  color={PREMIUM.primary}
                 />
+
                 <Text style={styles.secureText}>
                   SECURE
                 </Text>
@@ -225,19 +299,19 @@ export default function Payment() {
             </View>
 
             <Text style={styles.securityText}>
-              Your information is encrypted and
-              securely processed.
+              Your information is encrypted and securely processed.
             </Text>
           </View>
         </View>
 
-        {/* Payment Summary */}
+        {/* PAYMENT SUMMARY */}
         <View style={styles.summarySection}>
           <View style={styles.summaryHeader}>
-            <View>
+            <View style={styles.summaryHeaderContent}>
               <Text style={styles.summaryTitle}>
                 Payment Summary
               </Text>
+
               <Text style={styles.summarySubtitle}>
                 Review your final payable amount
               </Text>
@@ -246,22 +320,20 @@ export default function Payment() {
             <View style={styles.summaryIcon}>
               <Ionicons
                 name="receipt-outline"
-                size={18}
-                color={COLORS.primary}
+                size={19}
+                color={PREMIUM.primary}
               />
             </View>
           </View>
 
-          {/* Item Total */}
+          {/* ITEM TOTAL */}
           <View style={styles.summaryRow}>
             <View style={styles.summaryLabelRow}>
-              <View
-                style={styles.summarySmallIcon}
-              >
+              <View style={styles.summarySmallIcon}>
                 <Ionicons
                   name="basket-outline"
-                  size={13}
-                  color={COLORS.muted}
+                  size={14}
+                  color={PREMIUM.gray}
                 />
               </View>
 
@@ -275,16 +347,14 @@ export default function Payment() {
             </Text>
           </View>
 
-          {/* Platform Fee */}
+          {/* PLATFORM FEE */}
           <View style={styles.summaryRow}>
             <View style={styles.summaryLabelRow}>
-              <View
-                style={styles.summarySmallIcon}
-              >
+              <View style={styles.summarySmallIcon}>
                 <Ionicons
                   name="grid-outline"
-                  size={13}
-                  color={COLORS.muted}
+                  size={14}
+                  color={PREMIUM.gray}
                 />
               </View>
 
@@ -298,16 +368,14 @@ export default function Payment() {
             </Text>
           </View>
 
-          {/* Delivery Fee */}
+          {/* DELIVERY FEE */}
           <View style={styles.summaryRow}>
             <View style={styles.summaryLabelRow}>
-              <View
-                style={styles.summarySmallIcon}
-              >
+              <View style={styles.summarySmallIcon}>
                 <Ionicons
                   name="bicycle-outline"
-                  size={13}
-                  color={COLORS.muted}
+                  size={14}
+                  color={PREMIUM.gray}
                 />
               </View>
 
@@ -319,8 +387,7 @@ export default function Payment() {
             <Text
               style={[
                 styles.summaryValue,
-                deliveryFee === 0 &&
-                  styles.freeText,
+                deliveryFee === 0 && styles.freeText,
               ]}
             >
               {deliveryFee === 0
@@ -329,17 +396,15 @@ export default function Payment() {
             </Text>
           </View>
 
-          {/* Optional Tip */}
+          {/* OPTIONAL TIP */}
           {tip > 0 && (
             <View style={styles.summaryRow}>
               <View style={styles.summaryLabelRow}>
-                <View
-                  style={styles.summarySmallIcon}
-                >
+                <View style={styles.summarySmallIcon}>
                   <Ionicons
                     name="heart-outline"
-                    size={13}
-                    color={COLORS.muted}
+                    size={14}
+                    color={PREMIUM.gray}
                   />
                 </View>
 
@@ -356,9 +421,9 @@ export default function Payment() {
 
           <View style={styles.divider} />
 
-          {/* Total */}
+          {/* TOTAL */}
           <View style={styles.totalRow}>
-            <View>
+            <View style={styles.totalContent}>
               <Text style={styles.totalLabel}>
                 Total Amount
               </Text>
@@ -375,7 +440,7 @@ export default function Payment() {
         </View>
       </ScrollView>
 
-      {/* Bottom Bar */}
+      {/* FIXED BOTTOM BAR */}
       <View
         style={[
           styles.bottomBar,
@@ -400,8 +465,7 @@ export default function Payment() {
         <Pressable
           style={({ pressed }) => [
             styles.continueButton,
-            pressed &&
-              styles.continueButtonPressed,
+            pressed && styles.continueButtonPressed,
           ]}
           onPress={handleContinue}
         >
@@ -413,41 +477,76 @@ export default function Payment() {
             <Ionicons
               name="arrow-forward"
               size={17}
-              color={COLORS.primary}
+              color={PREMIUM.primary}
             />
           </View>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  // PAGE
+  container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PREMIUM.background,
+  },
+
+  scrollView: {
+    flex: 1,
   },
 
   content: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 17,
   },
 
-  header: {
-    height: 66,
-    paddingHorizontal: 16,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0E5EA",
+  // FIXED PREMIUM HEADER
+  headerBackground: {
+    backgroundColor: PREMIUM.primary,
+    paddingHorizontal: 18,
+    paddingBottom: 21,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    zIndex: 10,
+    elevation: 4,
+  },
+
+  headerCircleOne: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    right: -95,
+    top: -110,
+  },
+
+  headerCircleTwo: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    left: -65,
+    bottom: -60,
+  },
+
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
 
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: "#FFF0F6",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -460,32 +559,90 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 8,
   },
 
   headerTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "900",
+    color: PREMIUM.white,
+    fontSize: 17,
+    fontWeight: "800",
   },
 
   headerSubtitle: {
-    marginTop: 2,
-    color: COLORS.muted,
-    fontSize: 8.5,
-    fontWeight: "600",
+    marginTop: 4,
+    color: "#FFE0EB",
+    fontSize: 10,
+    fontWeight: "500",
   },
 
   headerSpacer: {
-    width: 42,
+    width: 44,
+    height: 44,
   },
 
+  headerInfo: {
+    marginTop: 19,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 19,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  headerInfoIcon: {
+    width: 41,
+    height: 41,
+    borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+
+  headerInfoContent: {
+    flex: 1,
+  },
+
+  headerInfoTitle: {
+    color: PREMIUM.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  headerInfoSubtitle: {
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  headerInfoBadge: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+
+  // PAYMENT METHOD SECTION
   section: {
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
+    backgroundColor: PREMIUM.white,
+    borderRadius: 23,
     padding: 15,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
+    borderColor: PREMIUM.border,
+    shadowColor: "#7A2949",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
 
   sectionHeader: {
@@ -494,70 +651,70 @@ const styles = StyleSheet.create({
   },
 
   sectionIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 13,
-    backgroundColor: "#FFE3EF",
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   sectionHeaderText: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 11,
   },
 
   sectionTitle: {
-    color: COLORS.text,
+    color: PREMIUM.navy,
     fontSize: 14,
     fontWeight: "900",
   },
 
   sectionSubtitle: {
-    marginTop: 3,
-    color: COLORS.muted,
-    fontSize: 9.5,
+    marginTop: 4,
+    color: PREMIUM.muted,
+    fontSize: 10,
   },
 
   methods: {
-    marginTop: 15,
+    marginTop: 16,
   },
 
   paymentCard: {
-    minHeight: 73,
-    marginBottom: 9,
+    minHeight: 77,
+    marginBottom: 10,
     paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
+    paddingVertical: 12,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.white,
     borderWidth: 1,
-    borderColor: "#E9DDE3",
+    borderColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
   },
 
   paymentCardSelected: {
-    backgroundColor: "#FFF0F6",
-    borderColor: COLORS.primary,
-    borderWidth: 1.4,
+    backgroundColor: PREMIUM.pinkSoft,
+    borderColor: PREMIUM.primary,
+    borderWidth: 1.5,
   },
 
   paymentCardPressed: {
-    opacity: 0.78,
+    opacity: 0.8,
     transform: [{ scale: 0.99 }],
   },
 
   paymentIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "#FFE3EF",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   paymentIconSelected: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: PREMIUM.primary,
   },
 
   paymentInfo: {
@@ -573,22 +730,36 @@ const styles = StyleSheet.create({
   },
 
   paymentTitle: {
-    color: COLORS.text,
-    fontSize: 12.5,
+    color: PREMIUM.navy,
+    fontSize: 12,
     fontWeight: "900",
   },
 
   paymentSubtitle: {
-    color: COLORS.muted,
-    fontSize: 9.5,
-    lineHeight: 14,
-    marginTop: 4,
+    color: PREMIUM.muted,
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 5,
+  },
+
+  recommendedBadge: {
+    marginLeft: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: PREMIUM.pinkLight,
+  },
+
+  recommendedText: {
+    color: PREMIUM.primary,
+    fontSize: 8,
+    fontWeight: "900",
   },
 
   radioOuter: {
-    width: 21,
-    height: 21,
-    borderRadius: 11,
+    width: 23,
+    height: 23,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "#D9CDD3",
     alignItems: "center",
@@ -596,40 +767,41 @@ const styles = StyleSheet.create({
   },
 
   radioOuterSelected: {
-    borderColor: COLORS.primary,
+    borderColor: PREMIUM.primary,
   },
 
   radioInner: {
-    width: 11,
-    height: 11,
+    width: 12,
+    height: 12,
     borderRadius: 6,
-    backgroundColor: COLORS.primary,
+    backgroundColor: PREMIUM.primary,
   },
 
+  // SECURITY CARD
   securityCard: {
-    marginTop: 12,
-    padding: 13,
-    minHeight: 69,
-    borderRadius: 17,
-    backgroundColor: "#FFF0F6",
+    marginTop: 13,
+    padding: 14,
+    minHeight: 73,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.pinkSoft,
     borderWidth: 1,
-    borderColor: "#F2D5E1",
+    borderColor: PREMIUM.pinkLight,
     flexDirection: "row",
     alignItems: "center",
   },
 
   securityIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: COLORS.white,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
   },
 
   securityContent: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 11,
   },
 
   securityTitleRow: {
@@ -639,74 +811,87 @@ const styles = StyleSheet.create({
   },
 
   securityTitle: {
-    color: COLORS.text,
-    fontSize: 11.5,
+    color: PREMIUM.navy,
+    fontSize: 12,
     fontWeight: "900",
   },
 
   secureBadge: {
-    marginLeft: 7,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 7,
-    backgroundColor: COLORS.white,
+    marginLeft: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: PREMIUM.white,
     flexDirection: "row",
     alignItems: "center",
   },
 
   secureText: {
-    marginLeft: 3,
-    color: COLORS.primary,
-    fontSize: 6.5,
+    marginLeft: 4,
+    color: PREMIUM.primary,
+    fontSize: 8,
     fontWeight: "900",
   },
 
   securityText: {
-    color: COLORS.muted,
-    fontSize: 9,
-    lineHeight: 13,
-    marginTop: 4,
+    color: PREMIUM.muted,
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 5,
   },
 
+  // SUMMARY
   summarySection: {
     marginTop: 20,
-    padding: 15,
-    borderRadius: 19,
-    backgroundColor: COLORS.white,
+    padding: 16,
+    borderRadius: 23,
+    backgroundColor: PREMIUM.white,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
+    borderColor: PREMIUM.border,
+    shadowColor: "#7A2949",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
 
   summaryHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 9,
+    marginBottom: 11,
+  },
+
+  summaryHeaderContent: {
+    flex: 1,
   },
 
   summaryTitle: {
-    color: COLORS.text,
-    fontSize: 15,
+    color: PREMIUM.navy,
+    fontSize: 16,
     fontWeight: "900",
   },
 
   summarySubtitle: {
-    color: COLORS.muted,
-    fontSize: 9,
-    marginTop: 3,
+    color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 4,
   },
 
   summaryIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 12,
-    backgroundColor: "#FFE3EF",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   summaryRow: {
-    minHeight: 39,
+    minHeight: 42,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -719,37 +904,37 @@ const styles = StyleSheet.create({
   },
 
   summarySmallIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 9,
-    backgroundColor: "#F8F5F7",
+    width: 29,
+    height: 29,
+    borderRadius: 15,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 9,
   },
 
   summaryLabel: {
-    color: COLORS.muted,
-    fontSize: 10.5,
+    color: PREMIUM.gray,
+    fontSize: 11,
     fontWeight: "600",
   },
 
   summaryValue: {
-    color: COLORS.text,
-    fontSize: 11,
+    color: PREMIUM.navy,
+    fontSize: 12,
     fontWeight: "800",
   },
 
   freeText: {
-    color: COLORS.primary,
+    color: PREMIUM.primary,
     fontWeight: "900",
   },
 
   divider: {
     height: 1,
-    backgroundColor: "#F0E5EA",
-    marginTop: 8,
-    marginBottom: 13,
+    backgroundColor: PREMIUM.border,
+    marginTop: 10,
+    marginBottom: 14,
   },
 
   totalRow: {
@@ -758,38 +943,50 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  totalContent: {
+    flex: 1,
+  },
+
   totalLabel: {
-    color: COLORS.text,
+    color: PREMIUM.navy,
     fontSize: 14,
     fontWeight: "900",
   },
 
   totalSubtitle: {
-    marginTop: 3,
-    color: COLORS.muted,
-    fontSize: 8.5,
+    marginTop: 4,
+    color: PREMIUM.muted,
+    fontSize: 9,
   },
 
   totalValue: {
-    color: COLORS.primary,
-    fontSize: 20,
+    color: PREMIUM.primary,
+    fontSize: 21,
     fontWeight: "900",
   },
 
+  // FIXED BOTTOM BAR
   bottomBar: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    paddingTop: 11,
-    backgroundColor: COLORS.white,
+    paddingTop: 12,
+    backgroundColor: PREMIUM.white,
     borderTopWidth: 1,
-    borderTopColor: "#EEDFE5",
+    borderTopColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     elevation: 12,
+    shadowColor: PREMIUM.navy,
+    shadowOffset: {
+      width: 0,
+      height: -3,
+    },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
   },
 
   bottomAmount: {
@@ -798,25 +995,25 @@ const styles = StyleSheet.create({
   },
 
   bottomLabel: {
-    color: COLORS.muted,
-    fontSize: 9.5,
+    color: PREMIUM.muted,
+    fontSize: 10,
     fontWeight: "700",
   },
 
   bottomTotal: {
-    marginTop: 2,
-    color: COLORS.text,
+    marginTop: 3,
+    color: PREMIUM.navy,
     fontSize: 21,
     fontWeight: "900",
   },
 
   continueButton: {
-    width: 151,
-    height: 50,
-    paddingLeft: 19,
+    minWidth: 150,
+    height: 52,
+    paddingLeft: 20,
     paddingRight: 7,
-    borderRadius: 16,
-    backgroundColor: COLORS.primary,
+    borderRadius: 27,
+    backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -828,16 +1025,16 @@ const styles = StyleSheet.create({
   },
 
   continueText: {
-    color: COLORS.white,
+    color: PREMIUM.white,
     fontSize: 13,
     fontWeight: "900",
   },
 
   arrowCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: PREMIUM.white,
     alignItems: "center",
     justifyContent: "center",
   },

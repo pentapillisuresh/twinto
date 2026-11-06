@@ -1,50 +1,54 @@
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   AppState,
   Image,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
-
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-
 import {
   useFocusEffect,
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
 
-import { COLORS } from "../../constants";
 import { getOrder } from "../../services/orderService";
-
 import {
   verifyPayment,
   getPaymentStatus,
 } from "../../services/paymentService";
 
-const PENDING_ORDER_KEY =
-  "twinto_cashfree_pending_order_v1";
+const C = {
+  primary: "#C9004F",
+  dark: "#A90042",
+  navy: "#172033",
+  white: "#FFFFFF",
+  bg: "#FFF9FB",
+  soft: "#FFF0F5",
+  light: "#FDE3EC",
+  border: "#E9DDE2",
+  muted: "#858B95",
+  green: "#16844A",
+  greenBg: "#EAF8F0",
+  orange: "#B96B10",
+  orangeBg: "#FFF5E8",
+  red: "#C53948",
+  redBg: "#FFF0F1",
+};
+
+const PENDING_ORDER_KEY = "twinto_cashfree_pending_order_v1";
 
 const STEPS = [
   {
@@ -76,8 +80,7 @@ const STEPS = [
 const money = (value) =>
   `₹${(Number(value) || 0).toFixed(2)}`;
 
-const upper = (value) =>
-  String(value || "").toUpperCase();
+const upper = (value) => String(value || "").toUpperCase();
 
 function getStepIndex(status) {
   switch (upper(status)) {
@@ -96,14 +99,8 @@ function getStepIndex(status) {
 
 function formatAddress(address) {
   if (!address) return "";
-
-  if (typeof address === "string") {
-    return address;
-  }
-
-  if (typeof address.address === "string") {
-    return address.address;
-  }
+  if (typeof address === "string") return address;
+  if (typeof address.address === "string") return address.address;
 
   return [
     address.addressLine1,
@@ -119,11 +116,7 @@ function formatAddress(address) {
 
 function getImageSource(image) {
   if (!image) return null;
-
-  if (typeof image === "string") {
-    return { uri: image };
-  }
-
+  if (typeof image === "string") return { uri: image };
   return image;
 }
 
@@ -134,35 +127,20 @@ function getPaymentState(data) {
       data?.status
   );
 
-  if (
-    value === "PAID" ||
-    value === "SUCCESS" ||
-    value === "SUCCESSFUL"
-  ) {
+  if (["PAID", "SUCCESS", "SUCCESSFUL"].includes(value)) {
     return "PAID";
   }
-
-  if (
-    value === "FAILED" ||
-    value === "FAILURE"
-  ) {
+  if (["FAILED", "FAILURE"].includes(value)) {
     return "FAILED";
   }
-
-  if (value === "CANCELLED") {
-    return "CANCELLED";
-  }
-
+  if (value === "CANCELLED") return "CANCELLED";
   return "PENDING";
 }
 
-function InfoRow({ label, value, highlight }) {
+function InfoRow({ label, value, highlight, last }) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>
-        {label}
-      </Text>
-
+    <View style={[styles.infoRow, last && { borderBottomWidth: 0 }]}>
+      <Text style={styles.infoLabel}>{label}</Text>
       <Text
         style={[
           styles.infoValue,
@@ -175,34 +153,18 @@ function InfoRow({ label, value, highlight }) {
   );
 }
 
-function SectionHeader({
-  icon,
-  title,
-  subtitle,
-  action,
-}) {
+function SectionHeader({ icon, title, subtitle, action }) {
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionIcon}>
-        <Ionicons
-          name={icon}
-          size={19}
-          color={COLORS.primary}
-        />
+        <Ionicons name={icon} size={19} color={C.primary} />
       </View>
-
       <View style={{ flex: 1 }}>
-        <Text style={styles.sectionTitle}>
-          {title}
-        </Text>
-
+        <Text style={styles.sectionTitle}>{title}</Text>
         {!!subtitle && (
-          <Text style={styles.sectionSubtitle}>
-            {subtitle}
-          </Text>
+          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
         )}
       </View>
-
       {action || null}
     </View>
   );
@@ -213,18 +175,13 @@ export default function OrderTracking() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
 
-  const id = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] =
-    useState(false);
-  const [verifying, setVerifying] =
-    useState(false);
-  const [errorMessage, setErrorMessage] =
-    useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const verifyingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -232,11 +189,14 @@ export default function OrderTracking() {
 
   useEffect(() => {
     mountedRef.current = true;
-
     return () => {
       mountedRef.current = false;
     };
   }, []);
+
+  // ========================================
+  // ORIGINAL ORDER LOADING LOGIC
+  // ========================================
 
   const loadOrder = useCallback(
     async (showLoader = false) => {
@@ -248,7 +208,6 @@ export default function OrderTracking() {
         }
 
         const data = await getOrder(id);
-
         orderRef.current = data;
 
         if (mountedRef.current) {
@@ -258,23 +217,16 @@ export default function OrderTracking() {
 
         return data;
       } catch (error) {
-        console.log(
-          "[ORDER] Load failed:",
-          error?.message
-        );
+        console.log("[ORDER] Load failed:", error?.message);
 
         if (mountedRef.current) {
           setErrorMessage(
-            error?.message ||
-              "Unable to load order details."
+            error?.message || "Unable to load order details."
           );
         }
-
         return null;
       } finally {
-        if (mountedRef.current) {
-          setLoading(false);
-        }
+        if (mountedRef.current) setLoading(false);
       }
     },
     [id]
@@ -282,20 +234,13 @@ export default function OrderTracking() {
 
   const clearPendingIfPaid = useCallback(
     async (paymentStatus) => {
-      if (paymentStatus !== "PAID") {
-        return;
-      }
+      if (paymentStatus !== "PAID") return;
 
       try {
-        const saved =
-          await AsyncStorage.getItem(
-            PENDING_ORDER_KEY
-          );
+        const saved = await AsyncStorage.getItem(PENDING_ORDER_KEY);
 
         if (String(saved) === String(id)) {
-          await AsyncStorage.removeItem(
-            PENDING_ORDER_KEY
-          );
+          await AsyncStorage.removeItem(PENDING_ORDER_KEY);
         }
       } catch (error) {
         console.log(
@@ -307,38 +252,30 @@ export default function OrderTracking() {
     [id]
   );
 
+  // ========================================
+  // ORIGINAL CASHFREE VERIFICATION LOGIC
+  // ========================================
+
   const checkPayment = useCallback(
     async (showAlert = true) => {
       if (
         !id ||
         verifyingRef.current ||
-        upper(orderRef.current?.paymentMethod) !==
-          "CASHFREE"
+        upper(orderRef.current?.paymentMethod) !== "CASHFREE"
       ) {
         return;
       }
 
       verifyingRef.current = true;
-
-      if (mountedRef.current) {
-        setVerifying(true);
-      }
+      if (mountedRef.current) setVerifying(true);
 
       try {
-        // Request server-side Cashfree verification.
-        const verification =
-          await verifyPayment(id);
-
-        // Read current payment status from backend.
-        const status =
-          await getPaymentStatus(id);
-
-        // Refresh the order shown in the app.
+        const verification = await verifyPayment(id);
+        const status = await getPaymentStatus(id);
         const updated = await loadOrder(false);
 
         const paid =
-          getPaymentState(verification) ===
-            "PAID" ||
+          getPaymentState(verification) === "PAID" ||
           getPaymentState(status) === "PAID" ||
           getPaymentState(updated) === "PAID";
 
@@ -351,7 +288,6 @@ export default function OrderTracking() {
               "Your Cashfree payment has been confirmed."
             );
           }
-
           return;
         }
 
@@ -393,61 +329,49 @@ export default function OrderTracking() {
         }
       } finally {
         verifyingRef.current = false;
-
-        if (mountedRef.current) {
-          setVerifying(false);
-        }
+        if (mountedRef.current) setVerifying(false);
       }
     },
     [id, loadOrder, clearPendingIfPaid]
   );
 
-  // Load order when opening this screen.
   useEffect(() => {
     orderRef.current = null;
     setOrder(null);
     loadOrder(true);
   }, [loadOrder]);
 
-  // Refresh whenever this screen receives focus.
   useFocusEffect(
     useCallback(() => {
       loadOrder(false);
     }, [loadOrder])
   );
 
-  // When the customer returns from Cashfree browser.
   useEffect(() => {
-    const subscription =
-      AppState.addEventListener(
-        "change",
-        (nextState) => {
-          if (nextState !== "active") {
-            return;
-          }
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        if (nextState !== "active") return;
 
-          const current = orderRef.current;
+        const current = orderRef.current;
 
-          if (
-            upper(current?.paymentMethod) ===
-              "CASHFREE" &&
-            getPaymentState(current) !== "PAID"
-          ) {
-            checkPayment(false);
-          } else {
-            loadOrder(false);
-          }
+        if (
+          upper(current?.paymentMethod) === "CASHFREE" &&
+          getPaymentState(current) !== "PAID"
+        ) {
+          checkPayment(false);
+        } else {
+          loadOrder(false);
         }
-      );
+      }
+    );
 
     return () => subscription.remove();
   }, [checkPayment, loadOrder]);
 
-  // Clear stale pending marker once a paid order loads.
   useEffect(() => {
     if (
-      upper(order?.paymentMethod) ===
-        "CASHFREE" &&
+      upper(order?.paymentMethod) === "CASHFREE" &&
       getPaymentState(order) === "PAID"
     ) {
       clearPendingIfPaid("PAID");
@@ -456,79 +380,49 @@ export default function OrderTracking() {
 
   const onRefresh = async () => {
     if (refreshing) return;
-
     setRefreshing(true);
 
     try {
       if (
-        upper(orderRef.current?.paymentMethod) ===
-          "CASHFREE" &&
-        getPaymentState(orderRef.current) !==
-          "PAID"
+        upper(orderRef.current?.paymentMethod) === "CASHFREE" &&
+        getPaymentState(orderRef.current) !== "PAID"
       ) {
         await checkPayment(false);
       } else {
         await loadOrder(false);
       }
     } finally {
-      if (mountedRef.current) {
-        setRefreshing(false);
-      }
+      if (mountedRef.current) setRefreshing(false);
     }
   };
 
-  const paymentMethod = upper(
-    order?.paymentMethod
-  );
+  // ========================================
+  // ORIGINAL ORDER DATA
+  // ========================================
 
-  const isCashfree =
-    paymentMethod === "CASHFREE";
+  const paymentMethod = upper(order?.paymentMethod);
+  const isCashfree = paymentMethod === "CASHFREE";
+  const isCOD = paymentMethod === "COD";
 
-  const isCOD =
-    paymentMethod === "COD";
+  const paymentStatus = getPaymentState(order);
+  const isPaid = paymentStatus === "PAID";
 
-  const paymentStatus =
-    getPaymentState(order);
+  const rawStatus = upper(order?.rawStatus || "PLACED");
+  const isCancelled = rawStatus === "CANCELLED";
+  const isDelivered = rawStatus === "DELIVERED";
+  const currentStep = getStepIndex(rawStatus);
 
-  const isPaid =
-    paymentStatus === "PAID";
+  const orderNumber = order?.orderNumber || order?.id || id;
+  const items = Array.isArray(order?.items) ? order.items : [];
 
-  const rawStatus = upper(
-    order?.rawStatus || "PLACED"
-  );
-
-  const isCancelled =
-    rawStatus === "CANCELLED";
-
-  const isDelivered =
-    rawStatus === "DELIVERED";
-
-  const currentStep =
-    getStepIndex(rawStatus);
-
-  const orderNumber =
-    order?.orderNumber ||
-    order?.id ||
-    id;
-
-  const items = Array.isArray(order?.items)
-    ? order.items
-    : [];
-
-  const partnerName =
-    order?.deliveryPartner?.name || null;
-
-  const partnerPhone =
-    order?.deliveryPartner?.phone || null;
+  const partnerName = order?.deliveryPartner?.name || null;
+  const partnerPhone = order?.deliveryPartner?.phone || null;
 
   const openPhone = async () => {
     if (!partnerPhone) return;
 
     try {
-      const url = `tel:${String(
-        partnerPhone
-      ).replace(/[^\d+]/g, "")}`;
-
+      const url = `tel:${String(partnerPhone).replace(/[^\d+]/g, "")}`;
       await Linking.openURL(url);
     } catch {
       Alert.alert(
@@ -538,127 +432,173 @@ export default function OrderTracking() {
     }
   };
 
+  const topInset =
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" && Platform.Version >= 35)
+      ? insets.top
+      : 0;
+
+  const header = (subtitle = "", showRefresh = true) => (
+    <View style={[styles.header, { paddingTop: topInset + 14 }]}>
+      <View style={styles.headerCircle} />
+
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.headerButton}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={22}
+            color={C.white}
+          />
+        </Pressable>
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Order Details</Text>
+          <Text style={styles.headerSubtitle}>
+            {subtitle || "Track your order"}
+          </Text>
+        </View>
+
+        {showRefresh ? (
+          <Pressable
+            style={styles.headerButton}
+            onPress={onRefresh}
+            disabled={refreshing || verifying}
+          >
+            {refreshing ? (
+              <ActivityIndicator color={C.white} size="small" />
+            ) : (
+              <Ionicons
+                name="refresh"
+                size={20}
+                color={C.white}
+              />
+            )}
+          </Pressable>
+        ) : (
+          <View style={{ width: 44 }} />
+        )}
+      </View>
+
+      {!!subtitle && (
+        <View style={styles.headerSummary}>
+          <View style={styles.headerSummaryIcon}>
+            <Ionicons
+              name="receipt-outline"
+              size={20}
+              color="#FFE0A8"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerSummaryLabel}>
+              YOUR ORDER
+            </Text>
+            <Text style={styles.headerSummaryNumber}>
+              #{orderNumber}
+            </Text>
+          </View>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={23}
+            color={C.white}
+          />
+        </View>
+      )}
+    </View>
+  );
+
+  // ========================================
+  // LOADING
+  // ========================================
+
   if (loading && !order) {
     return (
-      <SafeAreaView
-        style={styles.centered}
-        edges={["top", "bottom"]}
-      >
-        <ActivityIndicator
-          size="large"
-          color={COLORS.primary}
+      <View style={styles.safeArea}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={C.primary}
         />
-
-        <Text style={styles.loadingText}>
-          Loading your order...
-        </Text>
-      </SafeAreaView>
+        {header("", false)}
+        <View style={styles.centered}>
+          <View style={styles.loadingCircle}>
+            <ActivityIndicator
+              size="large"
+              color={C.primary}
+            />
+          </View>
+          <Text style={styles.loadingTitle}>
+            Preparing your order details
+          </Text>
+          <Text style={styles.loadingText}>
+            Loading your order...
+          </Text>
+        </View>
+      </View>
     );
   }
 
+  // ========================================
+  // ORDER NOT FOUND
+  // ========================================
+
   if (!order) {
     return (
-      <SafeAreaView
-        style={styles.safeArea}
-        edges={["top"]}
-      >
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={21}
-              color={COLORS.text}
-            />
-          </Pressable>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              Order Details
-            </Text>
-          </View>
-
-          <View style={{ width: 42 }} />
-        </View>
-
+      <View style={styles.safeArea}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={C.primary}
+        />
+        {header("", false)}
         <View style={styles.centered}>
-          <Ionicons
-            name="alert-circle-outline"
-            size={48}
-            color={COLORS.primary}
-          />
-
+          <View style={styles.emptyIcon}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={45}
+              color={C.primary}
+            />
+          </View>
           <Text style={styles.emptyTitle}>
             Order Unavailable
           </Text>
-
           <Text style={styles.emptyDescription}>
-            {errorMessage ||
-              "We couldn't find this order."}
+            {errorMessage || "We couldn't find this order."}
           </Text>
-
           <Pressable
             style={styles.primaryButton}
             onPress={() => loadOrder(true)}
           >
+            <Ionicons
+              name="refresh"
+              size={18}
+              color={C.white}
+            />
             <Text style={styles.primaryButtonText}>
               Try Again
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
+  // ========================================
+  // PREMIUM ORDER DETAILS
+  // ========================================
+
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "left", "right"]}
-    >
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={21}
-            color={COLORS.text}
-          />
-        </Pressable>
+    <View style={styles.safeArea}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={C.primary}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
+      />
 
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>
-            Order Details
-          </Text>
-
-          <Text style={styles.headerSubtitle}>
-            #{orderNumber}
-          </Text>
-        </View>
-
-        <Pressable
-          style={styles.refreshIcon}
-          onPress={onRefresh}
-          disabled={refreshing || verifying}
-        >
-          {refreshing ? (
-            <ActivityIndicator
-              size="small"
-              color={COLORS.primary}
-            />
-          ) : (
-            <Ionicons
-              name="refresh"
-              size={19}
-              color={COLORS.primary}
-            />
-          )}
-        </Pressable>
-      </View>
+      {header(`#${orderNumber}`)}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -666,8 +606,8 @@ export default function OrderTracking() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
+            tintColor={C.primary}
+            colors={[C.primary]}
           />
         }
         contentContainerStyle={[
@@ -678,13 +618,13 @@ export default function OrderTracking() {
           },
         ]}
       >
-        {/* ORDER STATUS */}
+        {/* ORDER STATUS HERO */}
         <View style={styles.heroCard}>
           <View
             style={[
               styles.heroIcon,
-              isCancelled &&
-                styles.heroIconCancelled,
+              isCancelled && styles.heroIconCancelled,
+              isDelivered && styles.heroIconDelivered,
             ]}
           >
             <Ionicons
@@ -692,11 +632,17 @@ export default function OrderTracking() {
                 isCancelled
                   ? "close-circle-outline"
                   : isDelivered
-                    ? "checkmark-done"
-                    : "bag-check-outline"
+                  ? "checkmark-done"
+                  : "bag-check-outline"
               }
-              size={30}
-              color={COLORS.primary}
+              size={32}
+              color={
+                isCancelled
+                  ? C.red
+                  : isDelivered
+                  ? C.green
+                  : C.primary
+              }
             />
           </View>
 
@@ -704,20 +650,24 @@ export default function OrderTracking() {
             {isCancelled
               ? "Order Cancelled"
               : isDelivered
-                ? "Order Delivered"
-                : order.status ||
-                  "Order Placed"}
+              ? "Order Delivered"
+              : order.status || "Order Placed"}
           </Text>
 
           <Text style={styles.heroDescription}>
             {isCancelled
               ? "This order has been cancelled."
               : isDelivered
-                ? "Thank you for shopping with TWINTO."
-                : "You can track your order progress below."}
+              ? "Thank you for shopping with TWINTO."
+              : "You can track your order progress below."}
           </Text>
 
           <View style={styles.orderNumberBadge}>
+            <Ionicons
+              name="receipt-outline"
+              size={14}
+              color={C.primary}
+            />
             <Text style={styles.orderNumberText}>
               ORDER #{orderNumber}
             </Text>
@@ -730,7 +680,7 @@ export default function OrderTracking() {
           )}
         </View>
 
-        {/* CASHFREE PAYMENT STATUS */}
+        {/* CASHFREE PAYMENT */}
         {isCashfree && (
           <View style={styles.section}>
             <SectionHeader
@@ -744,49 +694,46 @@ export default function OrderTracking() {
                 styles.paymentStatusCard,
                 isPaid
                   ? styles.paidCard
+                  : paymentStatus === "FAILED" ||
+                    paymentStatus === "CANCELLED"
+                  ? styles.failedCard
                   : styles.pendingCard,
               ]}
             >
-              <View
-                style={[
-                  styles.paymentStatusIcon,
-                  isPaid &&
-                    styles.paidIcon,
-                ]}
-              >
+              <View style={styles.paymentStatusIcon}>
                 <Ionicons
                   name={
                     isPaid
                       ? "checkmark-circle"
-                      : paymentStatus === "FAILED"
-                        ? "close-circle"
-                        : "time-outline"
+                      : paymentStatus === "FAILED" ||
+                        paymentStatus === "CANCELLED"
+                      ? "close-circle"
+                      : "time-outline"
                   }
-                  size={25}
+                  size={27}
                   color={
                     isPaid
-                      ? "#16844A"
-                      : COLORS.primary
+                      ? C.green
+                      : paymentStatus === "FAILED" ||
+                        paymentStatus === "CANCELLED"
+                      ? C.red
+                      : C.orange
                   }
                 />
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text
-                  style={styles.paymentStatusTitle}
-                >
+                <Text style={styles.paymentStatusTitle}>
                   {isPaid
                     ? "Payment Successful"
                     : paymentStatus === "FAILED"
-                      ? "Payment Failed"
-                      : paymentStatus === "CANCELLED"
-                        ? "Payment Cancelled"
-                        : "Payment Pending"}
+                    ? "Payment Failed"
+                    : paymentStatus === "CANCELLED"
+                    ? "Payment Cancelled"
+                    : "Payment Pending"}
                 </Text>
 
-                <Text
-                  style={styles.paymentStatusText}
-                >
+                <Text style={styles.paymentStatusText}>
                   {isPaid
                     ? "Your payment has been confirmed by the server."
                     : "Your order is saved. Check the payment status before making another payment."}
@@ -798,17 +745,16 @@ export default function OrderTracking() {
               label="Payment Method"
               value="Cashfree"
             />
-
             <InfoRow
               label="Payment Status"
               value={paymentStatus}
               highlight={isPaid}
             />
-
             <InfoRow
               label="Order Amount"
               value={money(order.total)}
               highlight
+              last
             />
 
             {!isPaid && (
@@ -817,23 +763,21 @@ export default function OrderTracking() {
                 disabled={verifying}
                 style={[
                   styles.verifyButton,
-                  verifying &&
-                    styles.disabledButton,
+                  verifying && styles.disabledButton,
                 ]}
               >
                 {verifying ? (
                   <ActivityIndicator
-                    color={COLORS.white}
+                    color={C.white}
                     size="small"
                   />
                 ) : (
                   <Ionicons
                     name="refresh-outline"
-                    size={18}
-                    color={COLORS.white}
+                    size={19}
+                    color={C.white}
                   />
                 )}
-
                 <Text style={styles.verifyText}>
                   {verifying
                     ? "Checking Payment..."
@@ -851,7 +795,7 @@ export default function OrderTracking() {
           </View>
         )}
 
-        {/* COD PAYMENT STATUS */}
+        {/* CASH ON DELIVERY */}
         {isCOD && (
           <View style={styles.section}>
             <SectionHeader
@@ -864,14 +808,16 @@ export default function OrderTracking() {
               <View style={styles.codIcon}>
                 <Ionicons
                   name="cash-outline"
-                  size={23}
-                  color={COLORS.primary}
+                  size={26}
+                  color={C.primary}
                 />
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.codTitle}>
-                  Cash on Delivery
+                  {isPaid
+                    ? "Payment Received"
+                    : "Cash on Delivery"}
                 </Text>
 
                 <Text style={styles.codDescription}>
@@ -883,18 +829,33 @@ export default function OrderTracking() {
             </View>
 
             <InfoRow
+              label="Payment Method"
+              value="Cash on Delivery"
+            />
+            <InfoRow
               label="Amount"
               value={money(order.total)}
               highlight
             />
-
             <InfoRow
               label="Payment Status"
-              value={upper(
-                order.paymentStatus ||
-                  "PENDING"
-              )}
+              value={upper(order.paymentStatus || "PENDING")}
+              last
             />
+
+            {!isPaid && (
+              <View style={styles.codNote}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={C.primary}
+                />
+                <Text style={styles.codNoteText}>
+                  Online payment is not required.
+                  Pay when your groceries arrive.
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -910,49 +871,37 @@ export default function OrderTracking() {
             <View style={styles.cancelledNotice}>
               <Ionicons
                 name="close-circle-outline"
-                size={20}
-                color={COLORS.primary}
+                size={22}
+                color={C.red}
               />
-
               <Text style={styles.cancelledText}>
                 This order has been cancelled.
               </Text>
             </View>
           ) : (
             STEPS.map((step, index) => {
-              const completed =
-                index <= currentStep;
-
-              const current =
-                index === currentStep;
-
-              const last =
-                index === STEPS.length - 1;
+              const completed = index <= currentStep;
+              const current = index === currentStep;
+              const last = index === STEPS.length - 1;
 
               return (
                 <View
                   key={step.key}
                   style={styles.timelineRow}
                 >
-                  <View
-                    style={styles.timelineIndicator}
-                  >
+                  <View style={styles.timelineIndicator}>
                     <View
                       style={[
                         styles.stepCircle,
-                        completed &&
-                          styles.stepCircleActive,
-                        current &&
-                          styles.stepCircleCurrent,
+                        completed && styles.stepCircleActive,
+                        current && styles.stepCircleCurrent,
                       ]}
                     >
                       <Ionicons
                         name={step.icon}
-                        size={17}
+                        size={18}
                         color={
-                          completed
-                            ? COLORS.white
-                            : COLORS.muted
+                          completed ? C.white : C.muted
                         }
                       />
                     </View>
@@ -968,32 +917,24 @@ export default function OrderTracking() {
                     )}
                   </View>
 
-                  <View
-                    style={styles.timelineContent}
-                  >
+                  <View style={styles.timelineContent}>
                     <Text
                       style={[
                         styles.stepTitle,
-                        completed &&
-                          styles.stepTitleActive,
+                        completed && styles.stepTitleActive,
                       ]}
                     >
                       {step.title}
                     </Text>
 
-                    <Text
-                      style={styles.stepDescription}
-                    >
+                    <Text style={styles.stepDescription}>
                       {step.description}
                     </Text>
 
                     {current && !isDelivered && (
-                      <View
-                        style={styles.currentBadge}
-                      >
-                        <Text
-                          style={styles.currentBadgeText}
-                        >
+                      <View style={styles.currentBadge}>
+                        <View style={styles.currentDot} />
+                        <Text style={styles.currentBadgeText}>
                           CURRENT STATUS
                         </Text>
                       </View>
@@ -1027,25 +968,16 @@ export default function OrderTracking() {
           ) : (
             items.map((item, index) => {
               const name =
-                item.productName ||
-                item.name ||
-                "Product";
+                item.productName || item.name || "Product";
 
-              const image =
-                getImageSource(
-                  item.productImage ||
-                    item.image
-                );
+              const image = getImageSource(
+                item.productImage || item.image
+              );
 
-              const quantity =
-                Number(item.quantity) || 1;
-
-              const price =
-                Number(item.price) || 0;
-
+              const quantity = Number(item.quantity) || 1;
+              const price = Number(item.price) || 0;
               const subtotal =
-                Number(item.subtotal) ||
-                price * quantity;
+                Number(item.subtotal) || price * quantity;
 
               return (
                 <View
@@ -1067,7 +999,7 @@ export default function OrderTracking() {
                       <Ionicons
                         name="image-outline"
                         size={25}
-                        color={COLORS.muted}
+                        color={C.muted}
                       />
                     )}
                   </View>
@@ -1081,32 +1013,23 @@ export default function OrderTracking() {
                     </Text>
 
                     <Text style={styles.productWeight}>
-                      {item.weight ||
-                        "Standard"}
+                      {item.weight || "Standard"}
                     </Text>
 
-                    <View
-                      style={styles.quantityBadge}
-                    >
-                      <Text
-                        style={styles.quantityText}
-                      >
+                    <View style={styles.quantityBadge}>
+                      <Text style={styles.quantityText}>
                         Qty {quantity}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.productPriceArea}>
-                    <Text
-                      style={styles.productPrice}
-                    >
+                    <Text style={styles.productPrice}>
                       {money(subtotal)}
                     </Text>
 
                     {quantity > 1 && (
-                      <Text
-                        style={styles.eachPrice}
-                      >
+                      <Text style={styles.eachPrice}>
                         {money(price)} each
                       </Text>
                     )}
@@ -1130,7 +1053,7 @@ export default function OrderTracking() {
               <Ionicons
                 name="home-outline"
                 size={22}
-                color={COLORS.primary}
+                color={C.primary}
               />
             </View>
 
@@ -1161,15 +1084,14 @@ export default function OrderTracking() {
               <View style={styles.partnerAvatar}>
                 <Ionicons
                   name="person"
-                  size={23}
-                  color={COLORS.primary}
+                  size={24}
+                  color={C.primary}
                 />
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.partnerName}>
-                  {partnerName ||
-                    "Delivery Partner"}
+                  {partnerName || "Delivery Partner"}
                 </Text>
 
                 {!!partnerPhone && (
@@ -1187,7 +1109,7 @@ export default function OrderTracking() {
                   <Ionicons
                     name="call"
                     size={19}
-                    color={COLORS.white}
+                    color={C.white}
                   />
                 </Pressable>
               )}
@@ -1225,9 +1147,7 @@ export default function OrderTracking() {
           {Number(order.discount) > 0 && (
             <InfoRow
               label="Discount"
-              value={`-${money(
-                order.discount
-              )}`}
+              value={`-${money(order.discount)}`}
             />
           )}
 
@@ -1241,14 +1161,12 @@ export default function OrderTracking() {
           <View style={styles.divider} />
 
           <View style={styles.totalRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.totalLabel}>
                 Total Amount
               </Text>
 
-              <Text
-                style={styles.totalSubtitle}
-              >
+              <Text style={styles.totalSubtitle}>
                 Inclusive of applicable charges
               </Text>
             </View>
@@ -1261,11 +1179,13 @@ export default function OrderTracking() {
 
         {/* SUPPORT */}
         <View style={styles.supportCard}>
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={23}
-            color={COLORS.primary}
-          />
+          <View style={styles.supportIcon}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={23}
+              color={C.primary}
+            />
+          </View>
 
           <View style={{ flex: 1 }}>
             <Text style={styles.supportTitle}>
@@ -1273,692 +1193,739 @@ export default function OrderTracking() {
             </Text>
 
             <Text style={styles.supportText}>
-              Your order details and payment
-              status are securely maintained by
-              our server.
+              Your order details and payment status
+              are securely maintained by our server.
             </Text>
           </View>
         </View>
 
-        {/* BACK TO HOME */}
+        {/* CONTINUE SHOPPING */}
         <Pressable
           style={styles.homeButton}
-          onPress={() =>
-            router.replace("/(tabs)")
-          }
+          onPress={() => router.replace("/(tabs)")}
         >
-          <Ionicons
-            name="home-outline"
-            size={19}
-            color={COLORS.white}
-          />
+          <View style={styles.homeButtonIcon}>
+            <Ionicons
+              name="home-outline"
+              size={19}
+              color={C.white}
+            />
+          </View>
 
           <Text style={styles.homeButtonText}>
             Continue Shopping
           </Text>
+
+          <View style={styles.homeArrow}>
+            <Ionicons
+              name="arrow-forward"
+              size={18}
+              color={C.primary}
+            />
+          </View>
         </Pressable>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: C.bg,
   },
-
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
     padding: 24,
   },
-
-  loadingText: {
-    color: COLORS.muted,
-    fontSize: 12,
-    marginTop: 15,
-    fontWeight: "700",
-  },
-
-  header: {
-    height: 66,
-    paddingHorizontal: 16,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0E5EA",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: "#FFF0F6",
+  loadingCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: C.navy,
+    marginTop: 20,
+  },
+  loadingText: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 8,
+  },
+  header: {
+    backgroundColor: C.primary,
+    paddingHorizontal: 17,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    elevation: 4,
+  },
+  headerCircle: {
+    position: "absolute",
+    right: -75,
+    top: -95,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerCenter: {
     flex: 1,
     alignItems: "center",
+    paddingHorizontal: 8,
   },
-
   headerTitle: {
-    color: COLORS.text,
-    fontSize: 18,
+    color: C.white,
+    fontSize: 17,
     fontWeight: "900",
   },
-
   headerSubtitle: {
-    color: COLORS.muted,
-    fontSize: 9,
-    marginTop: 3,
+    color: "#FFE0EB",
+    fontSize: 10,
+    marginTop: 4,
   },
-
-  refreshIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: "#FFF0F6",
+  headerSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 20,
+    padding: 13,
+    marginTop: 18,
+  },
+  headerSummaryIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
   },
-
+  headerSummaryLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFE0EB",
+    letterSpacing: 1,
+  },
+  headerSummaryNumber: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: C.white,
+    marginTop: 4,
+  },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 17,
   },
-
   heroCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 21,
-    padding: 22,
+    backgroundColor: C.white,
+    borderRadius: 25,
     borderWidth: 1,
-    borderColor: "#F1DDE6",
+    borderColor: C.border,
+    padding: 23,
     alignItems: "center",
-    marginBottom: 13,
+    marginBottom: 14,
+    elevation: 2,
   },
-
   heroIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 23,
-    backgroundColor: "#FFE3EF",
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
   heroIconCancelled: {
-    backgroundColor: "#FFF0F0",
+    backgroundColor: C.redBg,
   },
-
+  heroIconDelivered: {
+    backgroundColor: C.greenBg,
+  },
   heroTitle: {
-    color: COLORS.text,
-    fontSize: 19,
+    color: C.navy,
+    fontSize: 20,
     fontWeight: "900",
-    marginTop: 14,
     textAlign: "center",
+    marginTop: 16,
   },
-
   heroDescription: {
-    color: COLORS.muted,
-    fontSize: 10.5,
-    lineHeight: 17,
+    color: C.muted,
+    fontSize: 11,
+    lineHeight: 18,
     textAlign: "center",
-    marginTop: 6,
+    marginTop: 7,
   },
-
   orderNumberBadge: {
-    backgroundColor: "#FFF0F6",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: C.soft,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginTop: 17,
   },
-
   orderNumberText: {
-    color: COLORS.primary,
+    color: C.primary,
     fontSize: 10,
     fontWeight: "900",
   },
-
   orderDate: {
-    color: COLORS.muted,
-    fontSize: 9.5,
-    marginTop: 10,
+    color: C.muted,
+    fontSize: 10,
+    marginTop: 12,
   },
-
   section: {
-    backgroundColor: COLORS.white,
-    borderRadius: 19,
-    padding: 15,
+    backgroundColor: C.white,
+    borderRadius: 23,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#EEDFE5",
-    marginBottom: 12,
+    borderColor: C.border,
+    marginBottom: 14,
+    elevation: 1,
   },
-
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 16,
   },
-
   sectionIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 13,
-    backgroundColor: "#FFE3EF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-
-  sectionTitle: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  sectionSubtitle: {
-    color: COLORS.muted,
-    fontSize: 9.5,
-    marginTop: 3,
-  },
-
-  paymentStatusCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 13,
-    borderRadius: 15,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-
-  pendingCard: {
-    backgroundColor: "#FFF0F6",
-    borderColor: "#F2D5E1",
-  },
-
-  paidCard: {
-    backgroundColor: "#F0FFF5",
-    borderColor: "#C7EED4",
-  },
-
-  paymentStatusIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 11,
   },
-
-  paidIcon: {
-    backgroundColor: "#E1F8E9",
-  },
-
-  paymentStatusTitle: {
-    color: COLORS.text,
-    fontSize: 12.5,
+  sectionTitle: {
+    color: C.navy,
+    fontSize: 14,
     fontWeight: "900",
   },
-
+  sectionSubtitle: {
+    color: C.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+  paymentStatusCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 19,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  pendingCard: {
+    backgroundColor: C.orangeBg,
+    borderColor: "#F4DDBB",
+  },
+  paidCard: {
+    backgroundColor: C.greenBg,
+    borderColor: "#C7EED4",
+  },
+  failedCard: {
+    backgroundColor: C.redBg,
+    borderColor: "#F3D0D5",
+  },
+  paymentStatusIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: C.white,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  paymentStatusTitle: {
+    color: C.navy,
+    fontSize: 13,
+    fontWeight: "900",
+  },
   paymentStatusText: {
-    color: COLORS.muted,
-    fontSize: 9.5,
-    lineHeight: 15,
+    color: C.muted,
+    fontSize: 10,
+    lineHeight: 16,
     marginTop: 5,
   },
-
   verifyButton: {
-    height: 46,
-    backgroundColor: COLORS.primary,
-    borderRadius: 13,
+    height: 49,
+    backgroundColor: C.primary,
+    borderRadius: 25,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    marginTop: 14,
+    gap: 9,
+    marginTop: 15,
   },
-
   verifyText: {
-    color: COLORS.white,
+    color: C.white,
     fontSize: 12,
     fontWeight: "900",
   },
-
   disabledButton: {
     opacity: 0.65,
   },
-
   paymentWarning: {
-    color: COLORS.muted,
-    fontSize: 9,
-    lineHeight: 15,
+    color: C.muted,
+    fontSize: 10,
+    lineHeight: 16,
     textAlign: "center",
-    marginTop: 10,
+    marginTop: 12,
   },
-
   codCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: 15,
-    backgroundColor: "#FFF0F6",
-    marginBottom: 12,
+    padding: 14,
+    borderRadius: 19,
+    backgroundColor: C.soft,
+    borderWidth: 1,
+    borderColor: C.light,
+    marginBottom: 13,
   },
-
   codIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 13,
-    backgroundColor: COLORS.white,
+    width: 49,
+    height: 49,
+    borderRadius: 25,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: 12,
   },
-
   codTitle: {
-    color: COLORS.text,
-    fontSize: 12.5,
+    color: C.navy,
+    fontSize: 13,
     fontWeight: "900",
   },
-
   codDescription: {
-    color: COLORS.muted,
-    fontSize: 9.5,
+    color: C.muted,
+    fontSize: 10,
+    lineHeight: 16,
     marginTop: 5,
-    lineHeight: 15,
   },
-
+  codNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.soft,
+    borderRadius: 15,
+    padding: 12,
+    marginTop: 12,
+  },
+  codNoteText: {
+    flex: 1,
+    color: C.primary,
+    fontSize: 10,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
   infoRow: {
-    minHeight: 38,
+    minHeight: 43,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F5EEF1",
   },
-
   infoLabel: {
-    color: COLORS.muted,
-    fontSize: 10.5,
+    color: C.muted,
+    fontSize: 11,
+    flex: 1,
   },
-
   infoValue: {
-    color: COLORS.text,
+    color: C.navy,
     fontSize: 11,
     fontWeight: "800",
     textAlign: "right",
   },
-
   highlightText: {
-    color: COLORS.primary,
+    color: C.primary,
     fontWeight: "900",
   },
-
   timelineRow: {
     flexDirection: "row",
-    minHeight: 83,
+    minHeight: 88,
   },
-
   timelineIndicator: {
-    width: 40,
+    width: 42,
     alignItems: "center",
   },
-
   stepCircle: {
-    width: 33,
-    height: 33,
-    borderRadius: 17,
-    backgroundColor: "#F3EDF0",
+    width: 37,
+    height: 37,
+    borderRadius: 19,
+    backgroundColor: "#F2EDF0",
     alignItems: "center",
     justifyContent: "center",
   },
-
   stepCircleActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: C.primary,
   },
-
   stepCircleCurrent: {
     borderWidth: 3,
     borderColor: "#FFD3E5",
   },
-
   stepLine: {
     flex: 1,
     width: 2,
     backgroundColor: "#E9DFE3",
     marginVertical: 5,
   },
-
   stepLineActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: C.primary,
   },
-
   timelineContent: {
     flex: 1,
-    paddingLeft: 12,
-    paddingTop: 4,
+    paddingLeft: 13,
+    paddingTop: 5,
+    paddingBottom: 15,
   },
-
   stepTitle: {
-    color: COLORS.muted,
+    color: C.muted,
     fontSize: 12,
     fontWeight: "800",
   },
-
   stepTitleActive: {
-    color: COLORS.text,
+    color: C.navy,
     fontWeight: "900",
   },
-
   stepDescription: {
-    color: COLORS.muted,
-    fontSize: 9.5,
+    color: C.muted,
+    fontSize: 10,
+    lineHeight: 16,
     marginTop: 5,
   },
-
   currentBadge: {
     alignSelf: "flex-start",
-    marginTop: 8,
-    backgroundColor: "#FFF0F6",
-    borderRadius: 7,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 9,
+    backgroundColor: C.soft,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-
+  currentDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.primary,
+  },
   currentBadgeText: {
-    color: COLORS.primary,
-    fontSize: 7.5,
+    color: C.primary,
+    fontSize: 8,
     fontWeight: "900",
   },
-
   cancelledNotice: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
-    backgroundColor: "#FFF0F6",
-    padding: 13,
-    borderRadius: 13,
+    gap: 10,
+    backgroundColor: C.redBg,
+    padding: 14,
+    borderRadius: 17,
   },
-
   cancelledText: {
-    color: COLORS.text,
+    color: C.red,
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-
   countBadge: {
-    minWidth: 29,
-    height: 29,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: C.primary,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
   },
-
   countText: {
-    color: COLORS.white,
-    fontSize: 10,
+    color: C.white,
+    fontSize: 11,
     fontWeight: "900",
   },
-
   productRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 13,
   },
-
   productBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "#F0E5EA",
+    borderBottomColor: "#F2E8ED",
   },
-
   imageBox: {
     width: 72,
     height: 72,
-    borderRadius: 14,
+    borderRadius: 19,
     backgroundColor: "#F8F5F1",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-
   productImage: {
     width: "100%",
     height: "100%",
   },
-
   productInfo: {
     flex: 1,
     marginLeft: 11,
-    marginRight: 8,
+    marginRight: 7,
   },
-
   productName: {
-    color: COLORS.text,
+    color: C.navy,
     fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
+    fontWeight: "900",
+    lineHeight: 18,
   },
-
   productWeight: {
-    color: COLORS.muted,
-    fontSize: 9.5,
+    color: C.muted,
+    fontSize: 10,
     marginTop: 4,
   },
-
   quantityBadge: {
     alignSelf: "flex-start",
-    marginTop: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 7,
-    backgroundColor: "#FFF0F6",
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 13,
+    backgroundColor: C.soft,
   },
-
   quantityText: {
-    color: COLORS.primary,
-    fontSize: 8,
+    color: C.primary,
+    fontSize: 9,
     fontWeight: "900",
   },
-
   productPriceArea: {
     alignItems: "flex-end",
   },
-
   productPrice: {
-    color: COLORS.text,
-    fontSize: 12.5,
+    color: C.navy,
+    fontSize: 13,
     fontWeight: "900",
   },
-
   eachPrice: {
-    color: COLORS.muted,
-    fontSize: 8,
-    marginTop: 4,
+    color: C.muted,
+    fontSize: 9,
+    marginTop: 5,
   },
-
   emptyItems: {
-    color: COLORS.muted,
+    color: C.muted,
     fontSize: 11,
     textAlign: "center",
-    paddingVertical: 18,
+    paddingVertical: 20,
   },
-
   addressCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#FFF8FB",
-    borderRadius: 15,
-    padding: 13,
+    backgroundColor: C.bg,
+    borderRadius: 19,
+    padding: 14,
     borderWidth: 1,
-    borderColor: "#F2DCE6",
+    borderColor: C.light,
   },
-
   addressIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: COLORS.white,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: 12,
   },
-
   addressTitle: {
-    color: COLORS.text,
+    color: C.navy,
     fontSize: 12,
     fontWeight: "900",
   },
-
   addressText: {
-    color: COLORS.muted,
+    color: C.muted,
     fontSize: 10.5,
-    lineHeight: 17,
+    lineHeight: 18,
     marginTop: 6,
   },
-
   partnerCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: 15,
-    backgroundColor: "#FFF8FB",
+    padding: 13,
+    borderRadius: 19,
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-
   partnerAvatar: {
-    width: 45,
-    height: 45,
-    borderRadius: 15,
-    backgroundColor: "#FFE3EF",
+    width: 49,
+    height: 49,
+    borderRadius: 25,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 11,
+    marginRight: 12,
   },
-
   partnerName: {
-    color: COLORS.text,
-    fontSize: 12.5,
+    color: C.navy,
+    fontSize: 13,
     fontWeight: "900",
   },
-
   partnerPhone: {
-    color: COLORS.muted,
+    color: C.muted,
     fontSize: 10,
     marginTop: 5,
   },
-
   callButton: {
-    width: 41,
-    height: 41,
-    borderRadius: 13,
-    backgroundColor: COLORS.primary,
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor: C.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-
   divider: {
     height: 1,
-    backgroundColor: "#F0E5EA",
-    marginVertical: 12,
+    backgroundColor: C.border,
+    marginVertical: 16,
   },
-
   totalRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-
-  totalLabel: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  totalSubtitle: {
-    color: COLORS.muted,
-    fontSize: 8.5,
-    marginTop: 4,
-  },
-
-  totalValue: {
-    color: COLORS.primary,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-
-  supportCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    backgroundColor: "#FFF0F6",
-    borderRadius: 16,
+    gap: 8,
+    backgroundColor: C.soft,
+    borderRadius: 17,
     padding: 14,
-    marginBottom: 13,
   },
-
-  supportTitle: {
-    color: COLORS.text,
-    fontSize: 11,
-    fontWeight: "900",
-  },
-
-  supportText: {
-    color: COLORS.muted,
-    fontSize: 9.5,
-    lineHeight: 15,
-    marginTop: 5,
-  },
-
-  homeButton: {
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: COLORS.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 9,
-    marginBottom: 12,
-  },
-
-  homeButtonText: {
-    color: COLORS.white,
+  totalLabel: {
+    color: C.navy,
     fontSize: 13,
     fontWeight: "900",
   },
-
-  emptyTitle: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: "900",
-    marginTop: 13,
+  totalSubtitle: {
+    color: C.muted,
+    fontSize: 9,
+    marginTop: 5,
   },
-
-  emptyDescription: {
-    color: COLORS.muted,
+  totalValue: {
+    color: C.primary,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  supportCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: C.soft,
+    borderRadius: 21,
+    padding: 15,
+    marginBottom: 14,
+  },
+  supportIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor: C.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  supportTitle: {
+    color: C.navy,
     fontSize: 11,
-    lineHeight: 18,
+    fontWeight: "900",
+  },
+  supportText: {
+    color: C.muted,
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 5,
+  },
+  homeButton: {
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 9,
+    marginBottom: 12,
+  },
+  homeButtonIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.17)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeButtonText: {
+    flex: 1,
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  homeArrow: {
+    width: 39,
+    height: 39,
+    borderRadius: 20,
+    backgroundColor: C.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyIcon: {
+    width: 85,
+    height: 85,
+    borderRadius: 43,
+    backgroundColor: C.soft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyTitle: {
+    color: C.navy,
+    fontSize: 18,
+    fontWeight: "900",
+    marginTop: 17,
+  },
+  emptyDescription: {
+    color: C.muted,
+    fontSize: 11,
+    lineHeight: 19,
     textAlign: "center",
     marginTop: 8,
-    marginBottom: 18,
+    marginBottom: 20,
   },
-
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 23,
-    paddingVertical: 13,
-    borderRadius: 13,
+    backgroundColor: C.primary,
+    paddingHorizontal: 25,
+    paddingVertical: 15,
+    borderRadius: 25,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
   },
-
   primaryButtonText: {
-    color: COLORS.white,
+    color: C.white,
     fontSize: 12,
     fontWeight: "900",
   },
