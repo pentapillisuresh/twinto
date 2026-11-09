@@ -1,23 +1,33 @@
 
-import { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
+  Platform,
   Pressable,
   StatusBar,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 
 import ProductCard from "../../components/product/ProductCard";
-import { COLORS } from "../../constants";
+import { useCart } from "../../context";
 import { getCategoryBySlug } from "../../services/categoryService";
 import { getProductsByCategory } from "../../services/productService";
 
@@ -32,165 +42,241 @@ const PREMIUM = {
   border: "#E9DDE2",
   muted: "#858B95",
   gray: "#68717F",
-  gold: "#FFE19A",
 };
+
+const COLUMNS = 3;
+const SIDE_PADDING = 12;
+const COLUMN_GAP = 9;
 
 export default function CategoryProducts() {
   const { slug } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
 
-  // ORIGINAL STATE LOGIC
+  const { itemCount = 0 } = useCart();
+
+  // ORIGINAL STATE
   const [products, setProducts] = useState([]);
   const [category, setCategory] = useState(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ORIGINAL API LOGIC - UNCHANGED
+  // ORIGINAL API LOGIC
   useEffect(() => {
+    let active = true;
+
     (async () => {
       setLoading(true);
 
       try {
         const cat = await getCategoryBySlug(slug);
+
+        if (!active) return;
+
         setCategory(cat);
 
         if (cat?.id != null) {
           const list = await getProductsByCategory(cat.id);
-          setProducts(list);
+
+          if (!active) return;
+
+          setProducts(
+            Array.isArray(list) ? list : []
+          );
         } else {
           setProducts([]);
         }
-      } catch (e) {
-        console.log("Category products error:", e);
-        setProducts([]);
+      } catch (error) {
+        console.log(
+          "Category products error:",
+          error
+        );
+
+        if (active) {
+          setProducts([]);
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     })();
+
+    return () => {
+      active = false;
+    };
   }, [slug]);
 
-  // ORIGINAL SEARCH FILTER LOGIC - UNCHANGED
-  const filtered = products.filter((p) =>
-    String(p.name || "")
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  // ORIGINAL SEARCH FILTER
+  const filtered = useMemo(() => {
+    return products.filter((p) =>
+      String(p.name || "")
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
+  }, [products, search]);
 
   const topInset =
     Platform.OS === "ios" ||
-    (Platform.OS === "android" && Platform.Version >= 35)
+    (Platform.OS === "android" &&
+      Platform.Version >= 35)
       ? insets.top
       : 0;
 
-  const categoryName = category?.name || "Products";
+  const categoryName =
+    category?.name || "Products";
+
+  // EXACTLY THREE PRODUCTS PER ROW
+  const productWidth = Math.max(
+    0,
+    (
+      screenWidth -
+      SIDE_PADDING * 2 -
+      COLUMN_GAP * (COLUMNS - 1)
+    ) / COLUMNS
+  );
+
+  const goToCart = () => {
+    Keyboard.dismiss();
+
+    router.push("/(tabs)/cart");
+  };
+
+  const renderProduct = ({ item }) => (
+    <View
+      style={[
+        styles.productColumn,
+        {
+          width: productWidth,
+        },
+      ]}
+    >
+      <ProductCard product={item} />
+    </View>
+  );
+
+  const renderEmpty = () => (
+    <View style={styles.empty}>
+      <View style={styles.emptyIcon}>
+        <Ionicons
+          name="search-outline"
+          size={31}
+          color={PREMIUM.primary}
+        />
+      </View>
+
+      <Text style={styles.emptyTitle}>
+        No products found
+      </Text>
+
+      <Text style={styles.emptyText}>
+        {search
+          ? "Try another search."
+          : "No products are available in this category."}
+      </Text>
+
+      {search.length > 0 && (
+        <Pressable
+          style={styles.resetButton}
+          onPress={() => setSearch("")}
+        >
+          <Ionicons
+            name="refresh-outline"
+            size={16}
+            color={PREMIUM.white}
+          />
+
+          <Text style={styles.resetButtonText}>
+            Clear Search
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={PREMIUM.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
         }
       />
 
-      {/* FIXED FULL-WIDTH HEADER */}
+      {/* PREMIUM FIXED HEADER */}
+
       <View
         style={[
-          styles.headerBackground,
+          styles.header,
           {
-            paddingTop: topInset + 15,
+            paddingTop: topInset + 10,
           },
         ]}
       >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
+        <Pressable
+          style={styles.backButton}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color={PREMIUM.navy}
+          />
+        </Pressable>
 
-        {/* HEADER TOP */}
-        <View style={styles.headerRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.headerButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
+        <View style={styles.headerTitleBox}>
+          <Text
+            style={styles.headerTitle}
+            numberOfLines={1}
           >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
+            {categoryName}
+          </Text>
 
-          <View style={styles.headerTitleBox}>
-            <Text
-              style={styles.headerTitle}
-              numberOfLines={1}
-            >
-              {categoryName}
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Explore your everyday essentials
-            </Text>
-          </View>
-
-          <View style={styles.headerSide} />
+          <Text style={styles.headerSubtitle}>
+            Fresh picks, delivered fast
+          </Text>
         </View>
 
-        {/* CATEGORY INFORMATION */}
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="grid-outline"
-              size={20}
-              color={PREMIUM.gold}
-            />
-          </View>
+        {/* CART WITH LIVE BADGE */}
 
-          <View style={styles.headerInfoContent}>
-            <Text
-              style={styles.headerInfoTitle}
-              numberOfLines={1}
-            >
-              {categoryName}
-            </Text>
+        <Pressable
+          style={styles.cartButton}
+          onPress={goToCart}
+          accessibilityRole="button"
+          accessibilityLabel={`Open cart, ${itemCount} items`}
+        >
+          <Ionicons
+            name="cart-outline"
+            size={23}
+            color={PREMIUM.primary}
+          />
 
-            <Text style={styles.headerInfoSubtitle}>
-              {loading
-                ? "Finding products for you..."
-                : `${products.length} ${
-                    products.length === 1
-                      ? "product"
-                      : "products"
-                  } available`}
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="sparkles-outline"
-              size={18}
-              color={PREMIUM.white}
-            />
-          </View>
-        </View>
+          {itemCount > 0 && (
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>
+                {itemCount > 99
+                  ? "99+"
+                  : itemCount}
+              </Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
-      {/* SEARCH SECTION - FIXED */}
+      {/* SEARCH */}
+
       <View style={styles.searchSection}>
         <View style={styles.searchBox}>
-          <View style={styles.searchIconBox}>
-            <Ionicons
-              name="search-outline"
-              size={19}
-              color={PREMIUM.primary}
-            />
-          </View>
+          <Ionicons
+            name="search-outline"
+            size={20}
+            color={PREMIUM.primary}
+          />
 
           <TextInput
             value={search}
@@ -206,13 +292,11 @@ export default function CategoryProducts() {
             <Pressable
               style={styles.clearSearch}
               onPress={() => setSearch("")}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
             >
               <Ionicons
-                name="close"
-                size={17}
-                color={PREMIUM.gray}
+                name="close-circle"
+                size={20}
+                color={PREMIUM.muted}
               />
             </Pressable>
           )}
@@ -220,103 +304,69 @@ export default function CategoryProducts() {
       </View>
 
       {/* RESULTS HEADER */}
+
       <View style={styles.resultHeader}>
-        <View style={styles.resultTitleRow}>
-          <View style={styles.sectionAccent} />
+        <View style={styles.resultTitleContent}>
+          <Text style={styles.sectionTitle}>
+            {categoryName}
+          </Text>
 
-          <View style={styles.resultTitleContent}>
-            <Text
-              style={styles.title}
-              numberOfLines={1}
-            >
-              {categoryName}
-            </Text>
-
-            <Text style={styles.count}>
-              {filtered.length}{" "}
-              {filtered.length === 1
-                ? "product"
-                : "products"}{" "}
-              found
-            </Text>
-          </View>
+          <Text style={styles.resultCount}>
+            {loading
+              ? "Finding fresh products..."
+              : `${filtered.length} ${
+                  filtered.length === 1
+                    ? "product"
+                    : "products"
+                } available`}
+          </Text>
         </View>
 
-        <View style={styles.resultBadge}>
+        <View style={styles.resultsPill}>
           <Ionicons
-            name="layers-outline"
-            size={13}
+            name="grid-outline"
+            size={14}
             color={PREMIUM.primary}
           />
 
-          <Text style={styles.resultBadgeText}>
+          <Text style={styles.resultsPillText}>
             {filtered.length}
           </Text>
         </View>
       </View>
 
-      {/* ORIGINAL LOADING LOGIC */}
+      {/* PRODUCTS */}
+
       {loading ? (
         <View style={styles.loading}>
-          <View style={styles.loadingIcon}>
-            <ActivityIndicator
-              size="large"
-              color={PREMIUM.primary}
-            />
-          </View>
+          <ActivityIndicator
+            size="large"
+            color={PREMIUM.primary}
+          />
 
           <Text style={styles.loadingText}>
             Loading products...
           </Text>
         </View>
       ) : (
-        /* ORIGINAL TWO-COLUMN FLATLIST */
         <FlatList
+          key="three-column-products"
           data={filtered}
-          keyExtractor={(item) => String(item.id)}
-          numColumns={2}
-          showsVerticalScrollIndicator={false}
-          columnWrapperStyle={styles.columnWrapper}
-          contentContainerStyle={styles.productList}
-          renderItem={({ item }) => (
-            <ProductCard product={item} />
-          )}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <Ionicons
-                  name="search-outline"
-                  size={33}
-                  color={PREMIUM.primary}
-                />
-              </View>
-
-              <Text style={styles.emptyTitle}>
-                No products found
-              </Text>
-
-              <Text style={styles.emptyText}>
-                Try another search.
-              </Text>
-
-              {search.length > 0 && (
-                <Pressable
-                  style={styles.resetButton}
-                  onPress={() => setSearch("")}
-                >
-                  <Ionicons
-                    name="refresh-outline"
-                    size={16}
-                    color={PREMIUM.white}
-                  />
-
-                  <Text style={styles.resetButtonText}>
-                    Clear Search
-                  </Text>
-                </Pressable>
-              )}
-            </View>
+          keyExtractor={(item) =>
+            String(item.id)
           }
+          numColumns={3}
+          renderItem={renderProduct}
+          columnWrapperStyle={
+            styles.columnWrapper
+          }
+          contentContainerStyle={
+            styles.productList
+          }
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={renderEmpty}
+          extraData={productWidth}
         />
       )}
     </View>
@@ -324,219 +374,130 @@ export default function CategoryProducts() {
 }
 
 const styles = StyleSheet.create({
-  // PAGE
+  // SCREEN
+
   container: {
     flex: 1,
     backgroundColor: PREMIUM.background,
   },
 
-  // FIXED PINK HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 21,
-    borderBottomLeftRadius: 27,
-    borderBottomRightRadius: 27,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
-  },
+  // PREMIUM HEADER
 
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
-  headerRow: {
+  header: {
+    backgroundColor: PREMIUM.white,
+    paddingHorizontal: 15,
+    paddingBottom: 13,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: PREMIUM.border,
   },
 
-  headerButton: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+  backButton: {
+    width: 39,
+    height: 39,
+    borderRadius: 13,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  buttonPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.96 }],
-  },
-
-  headerSide: {
-    width: 43,
-    height: 43,
   },
 
   headerTitleBox: {
     flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 10,
+    minWidth: 0,
+    paddingHorizontal: 12,
   },
 
   headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: -0.3,
+    color: PREMIUM.navy,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.4,
   },
 
   headerSubtitle: {
-    color: "#FFE0EB",
+    color: PREMIUM.muted,
     fontSize: 10,
-    fontWeight: "500",
-    marginTop: 4,
+    fontWeight: "600",
+    marginTop: 3,
   },
 
-  // HEADER INFO CARD
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 19,
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  // CART BUTTON
 
-  headerInfoIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfoBadge: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-
-  // SEARCH SECTION
-  searchSection: {
-    paddingHorizontal: 16,
-    paddingTop: 17,
-    paddingBottom: 5,
-  },
-
-  searchBox: {
-    height: 53,
-    backgroundColor: PREMIUM.white,
-    borderRadius: 27,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    shadowColor: "#7A2949",
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    elevation: 1,
-  },
-
-  searchIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  cartButton: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
     backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+
+  cartBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    minWidth: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: PREMIUM.primary,
+    borderWidth: 2,
+    borderColor: PREMIUM.white,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+
+  cartBadgeText: {
+    color: PREMIUM.white,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  // SEARCH
+
+  searchSection: {
+    backgroundColor: PREMIUM.background,
+    paddingHorizontal: 15,
+    paddingTop: 15,
+    paddingBottom: 8,
+  },
+
+  searchBox: {
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.white,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   searchInput: {
     flex: 1,
     height: "100%",
     marginLeft: 10,
-    color: PREMIUM.navy,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "500",
+    color: PREMIUM.navy,
     paddingVertical: 0,
   },
 
   clearSearch: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 3,
+    padding: 5,
   },
 
-  // RESULT HEADER
+  // RESULTS
+
   resultHeader: {
-    paddingHorizontal: 17,
-    paddingTop: 20,
-    paddingBottom: 15,
+    paddingHorizontal: 15,
+    paddingTop: 12,
+    paddingBottom: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-
-  resultTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    minWidth: 0,
-  },
-
-  sectionAccent: {
-    width: 4,
-    height: 37,
-    borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
-    marginRight: 11,
   },
 
   resultTitleContent: {
@@ -544,63 +505,61 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
 
-  title: {
+  sectionTitle: {
+    color: PREMIUM.navy,
     fontSize: 19,
     fontWeight: "900",
-    color: PREMIUM.navy,
     letterSpacing: -0.4,
   },
 
-  count: {
-    marginTop: 4,
+  resultCount: {
     color: PREMIUM.muted,
     fontSize: 11,
     fontWeight: "500",
+    marginTop: 4,
   },
 
-  resultBadge: {
+  resultsPill: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.pinkSoft,
     gap: 5,
-    marginLeft: 8,
+    backgroundColor: PREMIUM.pinkSoft,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
   },
 
-  resultBadgeText: {
+  resultsPillText: {
     color: PREMIUM.primary,
     fontSize: 11,
     fontWeight: "800",
   },
 
-  // PRODUCT GRID
+  // THREE-COLUMN PRODUCT GRID
+
   productList: {
-    paddingHorizontal: 16,
-    paddingTop: 3,
-    paddingBottom: 35,
+    paddingHorizontal: SIDE_PADDING,
+    paddingTop: 4,
+    paddingBottom: 40,
     flexGrow: 1,
   },
 
   columnWrapper: {
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "flex-start",
-    marginBottom: 13,
+    columnGap: COLUMN_GAP,
+    marginBottom: 17,
+  },
+
+  productColumn: {
+    minWidth: 0,
+    alignSelf: "flex-start",
   },
 
   // LOADING
+
   loading: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  loadingIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -609,23 +568,23 @@ const styles = StyleSheet.create({
     color: PREMIUM.muted,
     fontSize: 12,
     fontWeight: "600",
-    marginTop: 14,
+    marginTop: 12,
   },
 
   // EMPTY STATE
+
   empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 65,
-    paddingBottom: 65,
     paddingHorizontal: 20,
+    paddingVertical: 65,
   },
 
   emptyIcon: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 68,
+    height: 68,
+    borderRadius: 22,
     backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
@@ -633,9 +592,9 @@ const styles = StyleSheet.create({
   },
 
   emptyTitle: {
+    color: PREMIUM.navy,
     fontSize: 17,
     fontWeight: "900",
-    color: PREMIUM.navy,
   },
 
   emptyText: {
@@ -647,9 +606,9 @@ const styles = StyleSheet.create({
 
   resetButton: {
     marginTop: 19,
-    height: 43,
+    height: 42,
     paddingHorizontal: 19,
-    borderRadius: 22,
+    borderRadius: 12,
     backgroundColor: PREMIUM.primary,
     flexDirection: "row",
     alignItems: "center",

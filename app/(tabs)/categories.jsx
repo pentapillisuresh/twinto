@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import {
   ActivityIndicator,
@@ -11,11 +11,13 @@ import {
   TextInput,
   View,
   StatusBar,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getCategories } from "../../services/categoryService";
 import { getProducts } from "../../services/productService";
@@ -30,29 +32,29 @@ const PREMIUM = {
   pinkLight: "#FDE3EC",
   border: "#E9DDE2",
   muted: "#858B95",
-  gold: "#FFE19A",
 };
 
-const GRID_PADDING = 16;
-const GRID_GAP = 10;
+const GRID_PADDING = 12;
+const GRID_GAP = 9;
 const GRID_COLUMNS = 3;
 
 export default function Categories() {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const [categories, setCategories] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // EXACTLY THREE COLUMNS
+  // ORIGINAL THREE-COLUMN GRID
   const cardWidth =
     (width -
       GRID_PADDING * 2 -
       GRID_GAP * (GRID_COLUMNS - 1)) /
     GRID_COLUMNS;
 
-  // ORIGINAL API AND PRODUCT COUNT LOGIC - UNCHANGED
+  // ORIGINAL API AND PRODUCT COUNT LOGIC
   useEffect(() => {
     (async () => {
       try {
@@ -65,7 +67,8 @@ export default function Categories() {
 
         prods.forEach((p) => {
           if (p.categoryId != null) {
-            c[p.categoryId] = (c[p.categoryId] || 0) + 1;
+            c[p.categoryId] =
+              (c[p.categoryId] || 0) + 1;
           }
         });
 
@@ -79,79 +82,71 @@ export default function Categories() {
     })();
   }, []);
 
-  // ORIGINAL SEARCH FILTERING - UNCHANGED
+  // ORIGINAL SEARCH FILTER
   const visible = categories.filter((c) =>
     search
-      ? c.name.toLowerCase().includes(search.toLowerCase())
+      ? c.name
+          .toLowerCase()
+          .includes(search.toLowerCase())
       : true
   );
+
+  const topInset =
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" &&
+      Platform.Version >= 35)
+      ? insets.top
+      : 0;
 
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primaryDark}
+        barStyle="dark-content"
+        backgroundColor={PREMIUM.white}
+        translucent={
+          Platform.OS === "android" &&
+          Platform.Version >= 35
+        }
       />
 
-      {/* FIXED PREMIUM HEADER */}
-      <View style={styles.headerBackground}>
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
+      {/* WHITE HEADER - LIKE FRESH FRUITS */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: topInset + 10,
+          },
+        ]}
+      >
+        <Pressable
+          style={styles.backButton}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color={PREMIUM.navy}
+          />
+        </Pressable>
 
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.headerButton}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
+        <View style={styles.headerTextBox}>
+          <Text style={styles.headerTitle}>
+            Categories
+          </Text>
 
-          <View style={styles.headerTextBox}>
-            <Text style={styles.headerTitle}>
-              Categories
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Explore TWINTO collections
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
+          <Text style={styles.headerSubtitle}>
+            Explore TWINTO collections
+          </Text>
         </View>
 
-        {/* HEADER INFORMATION */}
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="grid-outline"
-              size={19}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoText}>
-            <Text style={styles.headerInfoTitle}>
-              Shop your favorites
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              Discover everything in one place
-            </Text>
-          </View>
-
-          <View style={styles.totalBadge}>
-            <Text style={styles.totalNumber}>
-              {categories.length}
-            </Text>
-
-            <Text style={styles.totalLabel}>
-              Categories
-            </Text>
-          </View>
+        <View style={styles.headerRight}>
+          <Ionicons
+            name="grid-outline"
+            size={22}
+            color={PREMIUM.primary}
+          />
         </View>
       </View>
 
@@ -164,13 +159,11 @@ export default function Categories() {
       >
         {/* SEARCH */}
         <View style={styles.searchBox}>
-          <View style={styles.searchIconBox}>
-            <Ionicons
-              name="search-outline"
-              size={19}
-              color={PREMIUM.primary}
-            />
-          </View>
+          <Ionicons
+            name="search-outline"
+            size={20}
+            color={PREMIUM.primary}
+          />
 
           <TextInput
             value={search}
@@ -182,7 +175,10 @@ export default function Categories() {
           />
 
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch("")}>
+            <Pressable
+              onPress={() => setSearch("")}
+              style={styles.clearButton}
+            >
               <Ionicons
                 name="close-circle"
                 size={20}
@@ -192,32 +188,46 @@ export default function Categories() {
           )}
         </View>
 
-        {/* SECTION HEADING */}
+        {/* COMPACT SECTION HEADING */}
         <View style={styles.sectionHeader}>
-          <View>
+          <View style={styles.sectionText}>
             <Text style={styles.sectionTitle}>
               All Categories
             </Text>
 
             <Text style={styles.sectionSubtitle}>
-              Choose what you need
+              {visible.length}{" "}
+              {visible.length === 1
+                ? "category"
+                : "categories"}{" "}
+              available
             </Text>
           </View>
 
           <View style={styles.resultsBadge}>
+            <Ionicons
+              name="grid-outline"
+              size={14}
+              color={PREMIUM.primary}
+            />
+
             <Text style={styles.resultsText}>
-              {visible.length} items
+              {visible.length}
             </Text>
           </View>
         </View>
 
-        {/* ORIGINAL LOADING / EMPTY / GRID LOGIC */}
+        {/* ORIGINAL LOADING / EMPTY / GRID */}
         {loading ? (
           <View style={styles.loading}>
             <ActivityIndicator
               size="large"
               color={PREMIUM.primary}
             />
+
+            <Text style={styles.loadingText}>
+              Loading categories...
+            </Text>
           </View>
         ) : visible.length === 0 ? (
           <View style={styles.empty}>
@@ -240,7 +250,8 @@ export default function Categories() {
         ) : (
           <View style={styles.grid}>
             {visible.map((category) => {
-              const count = counts[category.id] || 0;
+              const count =
+                counts[category.id] || 0;
 
               const imageSource = category.image
                 ? { uri: category.image }
@@ -250,7 +261,9 @@ export default function Categories() {
                 <Pressable
                   key={category.id}
                   onPress={() =>
-                    router.push(`/category/${category.slug}`)
+                    router.push(
+                      `/category/${category.slug}`
+                    )
                   }
                   style={({ pressed }) => [
                     styles.card,
@@ -258,7 +271,7 @@ export default function Categories() {
                     pressed && styles.cardPressed,
                   ]}
                 >
-                  {/* IMAGE */}
+                  {/* LARGER IMAGE */}
                   <View style={styles.imageBox}>
                     {imageSource ? (
                       <Image
@@ -269,27 +282,33 @@ export default function Categories() {
                     ) : (
                       <Ionicons
                         name="grid-outline"
-                        size={28}
+                        size={29}
                         color={PREMIUM.primary}
                       />
                     )}
                   </View>
 
-                  {/* CATEGORY NAME */}
-                  <Text
-                    style={styles.name}
-                    numberOfLines={2}
-                  >
-                    {category.name}
-                  </Text>
+                  {/* COMPACT NAME AND COUNT */}
+                  <View style={styles.cardDetails}>
+                    <Text
+                      style={styles.name}
+                      numberOfLines={2}
+                    >
+                      {category.name}
+                    </Text>
 
-                  {/* PRODUCT COUNT */}
-                  <Text style={styles.count}>
-                    {count}{" "}
-                    {count === 1 ? "product" : "products"}
-                  </Text>
+                    <Text
+                      style={styles.count}
+                      numberOfLines={1}
+                    >
+                      {count}{" "}
+                      {count === 1
+                        ? "product"
+                        : "products"}
+                    </Text>
+                  </View>
 
-                  {/* SMALL DECORATIVE ARROW */}
+                  {/* ORIGINAL ARROW */}
                   <View style={styles.arrow}>
                     <Ionicons
                       name="arrow-forward"
@@ -315,140 +334,53 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM.background,
   },
 
-  // FIXED PREMIUM HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingTop: 45,
-    paddingHorizontal: 16,
-    paddingBottom: 22,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
-  },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -100,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    left: -60,
-    bottom: -60,
-  },
-
+  // WHITE HEADER
   header: {
+    backgroundColor: PREMIUM.white,
+    paddingHorizontal: 15,
+    paddingBottom: 13,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: PREMIUM.border,
   },
 
-  headerButton: {
-    width: 42,
-    height: 42,
+  backButton: {
+    width: 43,
+    height: 43,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.20)",
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
 
   headerTextBox: {
     flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
+    minWidth: 0,
+    paddingHorizontal: 12,
   },
 
   headerTitle: {
-    color: PREMIUM.white,
+    color: PREMIUM.navy,
     fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
+    fontWeight: "900",
+    letterSpacing: -0.4,
   },
 
   headerSubtitle: {
-    color: "#FFE0EB",
+    color: PREMIUM.muted,
     fontSize: 10,
-    fontWeight: "500",
+    fontWeight: "600",
     marginTop: 3,
   },
 
-  headerSpacer: {
-    width: 42,
-    height: 42,
-  },
-
-  // HEADER INFORMATION
-  headerInfo: {
-    marginTop: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 17,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  headerInfoIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
+  headerRight: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
-  },
-
-  headerInfoText: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 3,
-  },
-
-  totalBadge: {
-    backgroundColor: "rgba(255,255,255,0.16)",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 12,
-    alignItems: "center",
-    marginLeft: 8,
-  },
-
-  totalNumber: {
-    color: PREMIUM.white,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  totalLabel: {
-    color: "#FFE0EB",
-    fontSize: 8,
-    fontWeight: "600",
   },
 
   // SCROLL
@@ -457,67 +389,72 @@ const styles = StyleSheet.create({
   },
 
   scroll: {
-    paddingBottom: 30,
+    paddingBottom: 25,
   },
 
   // SEARCH
   searchBox: {
-    height: 51,
-    marginHorizontal: 16,
-    marginTop: 18,
-    borderRadius: 16,
+    height: 47,
+    marginHorizontal: 13,
+    marginTop: 15,
+    borderRadius: 14,
     backgroundColor: PREMIUM.white,
     borderWidth: 1,
     borderColor: PREMIUM.border,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-  },
-
-  searchIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 13,
   },
 
   searchInput: {
     flex: 1,
-    height: 49,
-    marginHorizontal: 10,
+    height: "100%",
+    marginLeft: 10,
     color: PREMIUM.navy,
     fontSize: 12,
     fontWeight: "500",
+    paddingVertical: 0,
   },
 
-  // SECTION
+  clearButton: {
+    padding: 4,
+  },
+
+  // REDUCED HEADING SPACING
   sectionHeader: {
-    marginTop: 24,
-    paddingHorizontal: 16,
+    marginTop: 15,
+    paddingHorizontal: 13,
+    marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
+  sectionText: {
+    flex: 1,
+  },
+
   sectionTitle: {
     color: PREMIUM.navy,
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
     letterSpacing: -0.3,
   },
 
   sectionSubtitle: {
     color: PREMIUM.muted,
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 2,
   },
 
   resultsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     backgroundColor: PREMIUM.pinkSoft,
-    borderRadius: 20,
-    paddingHorizontal: 11,
+    borderRadius: 18,
+    paddingHorizontal: 10,
     paddingVertical: 7,
   },
 
@@ -530,49 +467,38 @@ const styles = StyleSheet.create({
   // THREE-COLUMN GRID
   grid: {
     paddingHorizontal: GRID_PADDING,
-    marginTop: 17,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
     alignItems: "flex-start",
     columnGap: GRID_GAP,
-    rowGap: 13,
+    rowGap: 9,
   },
 
-  // CATEGORY CARD
+  // COMPACT CARD
   card: {
     backgroundColor: PREMIUM.white,
-    borderRadius: 17,
+    borderRadius: 13,
     borderWidth: 1,
     borderColor: PREMIUM.border,
-    paddingBottom: 12,
     overflow: "hidden",
-    minHeight: 150,
     alignItems: "center",
-    shadowColor: "#7A2949",
-    shadowOpacity: 0.05,
-    shadowRadius: 7,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    elevation: 2,
+    paddingBottom: 5,
   },
 
   cardPressed: {
-    transform: [{ scale: 0.97 }],
     opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
 
+  // IMAGE HEIGHT INCREASED
   imageBox: {
     width: "100%",
-    height: 90,
+    height: 112,
     backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    borderBottomWidth: 1,
-    borderBottomColor: PREMIUM.pinkLight,
   },
 
   categoryImage: {
@@ -580,34 +506,42 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
+  // LESS SPACE BELOW IMAGE
+  cardDetails: {
+    width: "100%",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    paddingTop: 4,
+  },
+
   name: {
-    marginTop: 9,
-    paddingHorizontal: 5,
     color: PREMIUM.navy,
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 10,
+    lineHeight: 12,
     fontWeight: "800",
     textAlign: "center",
-    minHeight: 30,
+    minHeight: 24,
+    includeFontPadding: false,
   },
 
   count: {
-    marginTop: 3,
-    marginBottom: 5,
     color: PREMIUM.muted,
     fontSize: 9,
     fontWeight: "600",
     textAlign: "center",
+    marginTop: 1,
+    includeFontPadding: false,
   },
 
+  // ARROW
   arrow: {
     position: "absolute",
     right: 5,
     top: 5,
-    width: 22,
-    height: 22,
+    width: 21,
+    height: 21,
     borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: "rgba(255,255,255,0.94)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -616,6 +550,13 @@ const styles = StyleSheet.create({
   loading: {
     paddingVertical: 80,
     alignItems: "center",
+  },
+
+  loadingText: {
+    marginTop: 12,
+    color: PREMIUM.muted,
+    fontSize: 12,
+    fontWeight: "600",
   },
 
   // EMPTY
@@ -649,6 +590,6 @@ const styles = StyleSheet.create({
   },
 
   bottomSpace: {
-    height: 20,
+    height: 12,
   },
 });

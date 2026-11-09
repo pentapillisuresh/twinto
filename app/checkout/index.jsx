@@ -1,231 +1,581 @@
 
-import { useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
-  StatusBar,
-  Platform,
 } from "react-native";
-
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AddressCard from "../../components/checkout/AddressCard";
 import BillDetails from "../../components/checkout/BillDetails";
 import TipSelector from "../../components/checkout/TipSelector";
 import FreeDeliveryBanner from "../../components/cart/FreeDeliveryBanner";
-import { COLORS } from "../../constants";
-import { useCart } from "../../context";
-import { getAddresses } from "../../services/addressService";
 
-const PREMIUM = {
+import { useCart, useLocation } from "../../context";
+import {
+  getAddresses,
+  getSelectedAddress,
+  isAddressServiceable,
+} from "../../services/addressService";
+import {
+  getCheckoutAddressId,
+  saveCheckoutAddress,
+} from "../../services/checkoutAddressService";
+import { validateCoupon } from "../../services/couponService";
+
+/* =========================================
+   THEME
+========================================= */
+
+const C = {
   primary: "#C9004F",
   primaryDark: "#A90042",
   navy: "#172033",
   white: "#FFFFFF",
   background: "#FFF9FB",
-  pinkSoft: "#FFF0F5",
-  pinkLight: "#FDE3EC",
+  soft: "#FFF0F5",
   border: "#E9DDE2",
   muted: "#858B95",
-  gray: "#68717F",
+  green: "#15803D",
   gold: "#FFE19A",
 };
 
+const COUPON_STORAGE_KEY = "twinto_checkout_coupon";
+
+const money = (value) =>
+  `₹${Number(value || 0).toFixed(2)}`;
+
+/* =========================================
+   SECTION HEADING
+========================================= */
+
+function SectionHeading({ title, subtitle, icon }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <View style={styles.sectionAccent} />
+
+      <View style={{ flex: 1 }}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+
+        {!!subtitle && (
+          <Text style={styles.sectionSubtitle}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.sectionIcon}>
+        <Ionicons
+          name={icon}
+          size={18}
+          color={C.primary}
+        />
+      </View>
+    </View>
+  );
+}
+
+/* =========================================
+   MAIN CHECKOUT
+========================================= */
+
 export default function Checkout() {
   const insets = useSafeAreaInsets();
+  const { location: homeLocation } = useLocation();
 
-  // ORIGINAL CART CONTEXT - UNCHANGED
-  const {
-    cart = [],
-    itemCount = 0,
-    itemTotal = 0,
-    freeDelivery = false,
-    deliveryFee = 0,
-    platformFee = 0,
-    minimumOrder = 0,
-    freeDeliveryMaxItems = 3,
-    tip = 0,
-    setTip,
-    total = 0,
-    locationFees,
-  } = useCart();
+const {
+  cart = [],
+  itemCount = 0,
+  itemTotal = 0,
+
+  freeDelivery = false,
+  freeDeliveryEnabled = false,
+  freeDeliveryMaxItems = 3,
+
+  deliveryFee = 0,
+  platformFee = 0,
+  minimumOrder = 0,
+
+  tip = 0,
+  setTip,
+  total = 0,
+
+  location,
+  refreshLocation,
+} = useCart();
 
   const [addresses, setAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] =
+    useState(null);
+  const [hasSavedSelection, setHasSavedSelection] =
+    useState(false);
   const [loading, setLoading] = useState(true);
 
-  // ORIGINAL ADDRESS API LOGIC - UNCHANGED
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-
-      (async () => {
-        try {
-          setLoading(true);
-
-          const list = await getAddresses();
-
-          if (active) {
-            setAddresses(Array.isArray(list) ? list : []);
-          }
-        } catch (e) {
-          console.log("Address load error:", e);
-        } finally {
-          if (active) {
-            setLoading(false);
-          }
-        }
-      })();
-
-      return () => {
-        active = false;
-      };
-    }, [])
-  );
-
-  // ORIGINAL ADDRESS SELECTION
-  const address = addresses[0];
-
-  // ORIGINAL LOCATION MATCHING LOGIC
-  const addressLocationId =
-    address?.locationId ??
-    address?.location?.id ??
-    null;
-
-  const selectedLocationId =
-    locationFees?.locationId ??
-    locationFees?.id ??
-    null;
-
-  const locationMatchesAddress =
-    !addressLocationId ||
-    !selectedLocationId ||
-    String(addressLocationId) === String(selectedLocationId);
-
-  // ORIGINAL FEE CALCULATIONS
-  const displayedPlatformFee = platformFee;
-  const displayedDeliveryFee = deliveryFee;
-
-  const minimumOrderRemaining = Math.max(
-    0,
-    Number(minimumOrder || 0) - Number(itemTotal || 0)
-  );
-
-  const isMinimumOrderMet =
-    Number(itemTotal || 0) >= Number(minimumOrder || 0);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
 
   const hasItems = cart.length > 0;
 
-  // FULL WIDTH HEADER SAFE AREA HANDLING
+  // Use the same selected location and delivery-time value as Home.
+  // Do not display an invented fixed delivery estimate.
+  const deliveryTimeValue =
+    homeLocation?.deliveryTime ?? location?.deliveryTime;
+  const deliveryTimeText =
+    deliveryTimeValue == null || String(deliveryTimeValue).trim() === ""
+      ? null
+      : /(?:min|hour|hr)/i.test(String(deliveryTimeValue))
+      ? String(deliveryTimeValue).trim()
+      : `${String(deliveryTimeValue).trim()} mins`;
+
+
+  /* =========================================
+     FIX: SELECTED LOCATION FROM CONTEXT
+  ========================================= */
+
+  const selectedLocationId =
+    location?.isActive !== false &&
+    location?.isAvailable !== false
+      ? Number(location?.id) || null
+      : null;
+
+  /* =========================================
+     SELECT SAVED ADDRESS
+  ========================================= */
+
+  const address = getSelectedAddress(
+    addresses,
+    hasSavedSelection ? selectedAddressId : null,
+    selectedLocationId
+  );
+
+  const locationMatchesAddress =
+    !!address &&
+    !!selectedLocationId &&
+    Number(address.locationId) ===
+      Number(selectedLocationId);
+
+  /* =========================================
+     ADDRESS NAVIGATION
+  ========================================= */
+
+  const openAddressSelection = () => {
+    if (!selectedLocationId) {
+      Alert.alert(
+        "Select Delivery Location",
+        "Please select an available delivery location before choosing an address."
+      );
+      return;
+    }
+
+    router.push({
+      pathname: "/checkout/address",
+      params: {
+        locationId: String(selectedLocationId),
+      },
+    });
+  };
+
+  const openAddAddress = () => {
+    if (!selectedLocationId) {
+      Alert.alert(
+        "Select Delivery Location",
+        "Please select an available delivery location first."
+      );
+      return;
+    }
+
+    router.push({
+      pathname: "/checkout/add-address",
+      params: {
+        locationId: String(selectedLocationId),
+      },
+    });
+  };
+
+  /* =========================================
+     ORDER CALCULATIONS
+  ========================================= */
+
+  const minimumOrderRemaining = Math.max(
+    0,
+    Number(minimumOrder || 0) -
+      Number(itemTotal || 0)
+  );
+
+  const isMinimumOrderMet =
+    Number(itemTotal || 0) >=
+    Number(minimumOrder || 0);
+
+  const discount = Math.max(
+    0,
+    Math.min(
+      Number(itemTotal || 0),
+      Number(appliedCoupon?.discount || 0)
+    )
+  );
+
+  const estimatedTotal = Math.max(
+    0,
+    Number(total || 0) - discount
+  );
+
   const topInset =
     Platform.OS === "ios" ||
     (Platform.OS === "android" && Platform.Version >= 35)
       ? insets.top
       : 0;
 
-  // PREMIUM FIXED HEADER
-  function renderHeader() {
-    return (
-      <View
-        style={[
-          styles.headerBackground,
-          {
-            paddingTop: topInset + 16,
-          },
-        ]}
-      >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
+  /* =========================================
+     LOAD ADDRESSES ON SCREEN FOCUS
+  ========================================= */
 
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [
-              styles.headerButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-          <View style={styles.headerTitleBox}>
-            <Text style={styles.headerTitle}>
-              Checkout
-            </Text>
+      const loadAddresses = async () => {
+        try {
+          setLoading(true);
 
-            <Text style={styles.headerSubtitle}>
-              Review your order details
-            </Text>
-          </View>
+          const [list, savedId] = await Promise.all([
+            getAddresses(),
+            getCheckoutAddressId(),
+          ]);
 
-          <View style={styles.headerSide} />
+          if (!active) return;
+
+          setAddresses(
+            Array.isArray(list) ? list : []
+          );
+          setSelectedAddressId(savedId);
+          setHasSavedSelection(savedId != null);
+        } catch (error) {
+          console.log(
+            "[CHECKOUT] Address load error:",
+            error
+          );
+
+          if (active) {
+            setAddresses([]);
+            setSelectedAddressId(null);
+            setHasSavedSelection(false);
+          }
+        } finally {
+          if (active) setLoading(false);
+        }
+      };
+
+      loadAddresses();
+
+      return () => {
+        active = false;
+      };
+    }, [selectedLocationId])
+  );
+
+  /* =========================================
+     RESTORE SAVED COUPON
+  ========================================= */
+
+  useEffect(() => {
+    let active = true;
+
+    const restore = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(
+          COUPON_STORAGE_KEY
+        );
+
+        if (!saved || !active) return;
+
+        const parsed = JSON.parse(saved);
+
+        if (parsed?.code) {
+          setCouponCode(
+            String(parsed.code).toUpperCase()
+          );
+        }
+      } catch (error) {
+        console.log(
+          "[CHECKOUT] Coupon restore error:",
+          error?.message
+        );
+      }
+    };
+
+    restore();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /* =========================================
+     REMOVE COUPON
+  ========================================= */
+
+  const removeCoupon = async () => {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError("");
+
+    try {
+      await AsyncStorage.removeItem(
+        COUPON_STORAGE_KEY
+      );
+    } catch (error) {
+      console.log(
+        "[CHECKOUT] Remove coupon error:",
+        error?.message
+      );
+    }
+  };
+
+  /* =========================================
+     APPLY COUPON
+  ========================================= */
+
+  const applyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+
+    if (!code) {
+      setCouponError("Please enter a coupon code.");
+      return;
+    }
+
+    if (couponLoading) return;
+
+    try {
+      setCouponLoading(true);
+      setCouponError("");
+
+      const result = await validateCoupon(
+        code,
+        Number(itemTotal || 0)
+      );
+
+      const coupon = {
+        code: String(
+          result?.code || code
+        ).toUpperCase(),
+        discount: Math.max(
+          0,
+          Number(result?.discount || 0)
+        ),
+      };
+
+      setAppliedCoupon(coupon);
+      setCouponCode(coupon.code);
+
+      await AsyncStorage.setItem(
+        COUPON_STORAGE_KEY,
+        JSON.stringify(coupon)
+      );
+    } catch (error) {
+      setAppliedCoupon(null);
+      setCouponError(
+        error?.message || "Unable to apply coupon."
+      );
+
+      await AsyncStorage.removeItem(
+        COUPON_STORAGE_KEY
+      ).catch(() => {});
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  /* =========================================
+     REVALIDATE COUPON ON CART CHANGE
+  ========================================= */
+
+  useEffect(() => {
+    if (!appliedCoupon?.code) return;
+
+    let active = true;
+
+    const revalidate = async () => {
+      try {
+        const result = await validateCoupon(
+          appliedCoupon.code,
+          Number(itemTotal || 0)
+        );
+
+        if (!active) return;
+
+        const updated = {
+          code: result?.code || appliedCoupon.code,
+          discount: Math.max(
+            0,
+            Number(result?.discount || 0)
+          ),
+        };
+
+        setAppliedCoupon(updated);
+
+        await AsyncStorage.setItem(
+          COUPON_STORAGE_KEY,
+          JSON.stringify(updated)
+        );
+      } catch (error) {
+        if (!active) return;
+
+        setAppliedCoupon(null);
+        setCouponError(
+          error?.message ||
+            "Coupon is no longer valid for this cart."
+        );
+
+        await AsyncStorage.removeItem(
+          COUPON_STORAGE_KEY
+        ).catch(() => {});
+      }
+    };
+
+    revalidate();
+
+    return () => {
+      active = false;
+    };
+  }, [itemTotal]);
+
+  /* =========================================
+     CONTINUE TO PAYMENT
+  ========================================= */
+
+  const continueToPayment = async () => {
+    if (loading) return;
+
+    if (!selectedLocationId) {
+      Alert.alert(
+        "Delivery Location Required",
+        "Please select an available delivery location before checkout."
+      );
+      return;
+    }
+
+    if (!address) {
+      Alert.alert(
+        "Address Required",
+        "Please select an available address for your delivery location."
+      );
+      return;
+    }
+
+    if (
+      !locationMatchesAddress ||
+      !isAddressServiceable(
+        address,
+        selectedLocationId
+      )
+    ) {
+      Alert.alert(
+        "Delivery Location Unavailable",
+        "This address is not available for the selected delivery location."
+      );
+      return;
+    }
+
+    if (!isMinimumOrderMet) {
+      Alert.alert(
+        "Minimum Order Required",
+        `Please add ₹${minimumOrderRemaining.toFixed(2)} more.`
+      );
+      return;
+    }
+
+    try {
+      await saveCheckoutAddress(address);
+
+      setSelectedAddressId(address.id);
+      setHasSavedSelection(true);
+
+      router.push("/checkout/payment");
+    } catch (error) {
+      Alert.alert(
+        "Address Error",
+        error?.message || "Unable to save address."
+      );
+    }
+  };
+
+  /* =========================================
+     PREMIUM HEADER
+  ========================================= */
+
+  const renderHeader = () => (
+    <View
+      style={[
+        styles.header,
+        { paddingTop: topInset + 10 },
+      ]}
+    >
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color={C.navy}
+          />
+        </Pressable>
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Checkout</Text>
+          <Text style={styles.headerSubtitle}>
+            Review your order details
+          </Text>
         </View>
 
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="bag-check-outline"
-              size={20}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              Almost there!
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              {itemCount}{" "}
-              {itemCount === 1 ? "item" : "items"} in your order
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={18}
-              color={PREMIUM.white}
-            />
-          </View>
+        <View style={styles.headerTrailing}>
+          <Ionicons
+            name="bag-check-outline"
+            size={21}
+            color={C.primary}
+          />
         </View>
       </View>
-    );
-  }
+    </View>
+  );
 
-  // ORIGINAL EMPTY CART CONDITION
+  /* =========================================
+     EMPTY CART
+  ========================================= */
+
   if (!hasItems) {
     return (
       <View style={styles.container}>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={PREMIUM.primary}
-          translucent={
-            Platform.OS === "android" &&
-            Platform.Version >= 35
-          }
+          barStyle="dark-content"
+          backgroundColor={C.white}
         />
 
         {renderHeader()}
 
         <View style={styles.empty}>
-          <View style={styles.emptyIconOuter}>
-            <View style={styles.emptyIcon}>
-              <Ionicons
-                name="cart-outline"
-                size={36}
-                color={PREMIUM.primary}
-              />
-            </View>
+          <View style={styles.emptyIcon}>
+            <Ionicons
+              name="cart-outline"
+              size={40}
+              color={C.primary}
+            />
           </View>
 
           <Text style={styles.emptyTitle}>
@@ -233,30 +583,26 @@ export default function Checkout() {
           </Text>
 
           <Text style={styles.emptySubtitle}>
-            Add some products before continuing to checkout.
+            Add some products before continuing
+            to checkout.
           </Text>
 
           <Pressable
+            style={styles.emptyButton}
             onPress={() => router.replace("/(tabs)")}
-            style={({ pressed }) => [
-              styles.emptyButton,
-              pressed && styles.pressed,
-            ]}
           >
             <Ionicons
               name="bag-outline"
-              size={18}
-              color={PREMIUM.white}
+              size={19}
+              color={C.white}
             />
-
             <Text style={styles.emptyButtonText}>
               Continue Shopping
             </Text>
-
             <Ionicons
               name="arrow-forward"
-              size={17}
-              color={PREMIUM.white}
+              size={18}
+              color={C.white}
             />
           </Pressable>
         </View>
@@ -264,328 +610,413 @@ export default function Checkout() {
     );
   }
 
+  /* =========================================
+     CHECKOUT UI
+  ========================================= */
+
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={C.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
         }
       />
 
-      {/* FIXED HEADER - DOES NOT SCROLL */}
       {renderHeader()}
 
-      {/* ONLY CHECKOUT CONTENT SCROLLS */}
       <ScrollView
-        style={styles.scrollView}
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scroll,
-          {
-            paddingBottom: 150 + insets.bottom,
-          },
-        ]}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          paddingBottom: 150 + insets.bottom,
+        }}
       >
         {/* DELIVERY INFORMATION */}
+
         <View style={styles.deliveryCard}>
           <View style={styles.deliveryIcon}>
             <Ionicons
               name="flash"
-              size={21}
-              color={PREMIUM.primary}
+              size={22}
+              color={C.primary}
             />
           </View>
 
-          <View style={styles.deliveryInfo}>
-            <View style={styles.deliveryTitleRow}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.inlineRow}>
               <Text style={styles.deliveryTitle}>
-                Delivery in 17–20 mins
+                {deliveryTimeText
+                  ? `Delivery in ${deliveryTimeText}`
+                  : "Delivery time unavailable"}
               </Text>
 
-              <View style={styles.fastBadge}>
-                <View style={styles.fastDot} />
-                <Text style={styles.fastText}>
-                  FAST
-                </Text>
-              </View>
+              {!!deliveryTimeText && (
+                <View style={styles.fastBadge}>
+                  <Text style={styles.fastText}>ESTIMATE</Text>
+                </View>
+              )}
             </View>
 
             <Text style={styles.deliverySubtitle}>
-              Your order will be delivered quickly.
+              {homeLocation?.name || location?.name
+                ? `Estimated time for ${homeLocation?.name || location?.name}`
+                : "Based on your selected delivery location"}
             </Text>
           </View>
         </View>
 
-        {/* ORIGINAL FREE DELIVERY COMPONENT */}
-        <View style={styles.freeDeliveryWrap}>
-          <FreeDeliveryBanner
-            itemCount={itemCount}
-            freeDelivery={freeDelivery}
-          />
-        </View>
+        {/* FREE DELIVERY */}
+<FreeDeliveryBanner
+  itemCount={itemCount}
+  freeDelivery={freeDelivery}
+  freeDeliveryEnabled={freeDeliveryEnabled}
+  freeDeliveryMaxItems={freeDeliveryMaxItems}
+/>
 
-        {/* DELIVERY ADDRESS SECTION */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionAccent} />
+        {/* DELIVERY ADDRESS */}
 
-          <View style={styles.sectionTitleWrap}>
-            <Text style={styles.sectionTitle}>
-              Delivery Address
-            </Text>
+        <SectionHeading
+          title="Delivery Address"
+          subtitle="Where should we deliver your order?"
+          icon="location-outline"
+        />
 
-            <Text style={styles.sectionSubtitle}>
-              Where should we deliver your order?
-            </Text>
-          </View>
-
-          <View style={styles.sectionIcon}>
-            <Ionicons
-              name="location-outline"
-              size={17}
-              color={PREMIUM.primary}
-            />
-          </View>
-        </View>
-
-        {/* ORIGINAL ADDRESS LOGIC */}
         {loading ? (
-          <View style={styles.addressLoading}>
-            <ActivityIndicator
-              size="small"
-              color={PREMIUM.primary}
-            />
-
-            <Text style={styles.addressLoadingText}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color={C.primary} />
+            <Text style={styles.mutedText}>
               Loading address...
             </Text>
           </View>
         ) : address ? (
-          <View style={styles.addressCardWrap}>
-            <AddressCard
-              address={address}
-              selected={true}
-              onChange={() =>
-                router.push("/checkout/address")
-              }
-            />
-          </View>
+          <AddressCard
+            address={address}
+            selected={true}
+            onChange={openAddressSelection}
+          />
         ) : (
           <Pressable
-            style={({ pressed }) => [
-              styles.noAddress,
-              pressed && styles.pressed,
-            ]}
-            onPress={() =>
-              router.push("/checkout/add-address")
+            style={styles.actionCard}
+            onPress={
+              selectedLocationId
+                ? openAddressSelection
+                : openAddAddress
             }
           >
-            <View style={styles.noAddressIcon}>
+            <View style={styles.actionIcon}>
               <Ionicons
-                name="add"
+                name="location-outline"
                 size={22}
-                color={PREMIUM.primary}
+                color={C.primary}
               />
             </View>
 
-            <View style={styles.noAddressContent}>
-              <Text style={styles.noAddressText}>
-                Add a delivery address
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>
+                {selectedLocationId
+                  ? "Select delivery address"
+                  : "Select delivery location first"}
               </Text>
 
-              <Text style={styles.noAddressSubtitle}>
-                Choose where to receive your order
+              <Text style={styles.actionSubtitle}>
+                {selectedLocationId
+                  ? "Choose a saved address or add a new one"
+                  : "Choose an available delivery area"}
               </Text>
             </View>
 
             <Ionicons
               name="chevron-forward"
-              size={18}
-              color={PREMIUM.primary}
+              size={19}
+              color={C.primary}
             />
           </Pressable>
         )}
 
-        {/* ORIGINAL LOCATION / MINIMUM ORDER LOGIC */}
-        {address && (
-          <>
-            {!locationMatchesAddress && (
-              <View style={styles.locationWarning}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={20}
-                  color="#B45309"
-                />
+        {!loading && !selectedLocationId && (
+          <View style={styles.warning}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={21}
+              color="#B45309"
+            />
 
-                <Text style={styles.locationWarningText}>
-                  Your selected delivery address belongs to a
-                  different location. Please verify the address
-                  before placing your order.
-                </Text>
-              </View>
-            )}
-
-            {Number(minimumOrder) > 0 && (
-              <View style={styles.minimumOrderCard}>
-                <View style={styles.minimumOrderIcon}>
-                  <Ionicons
-                    name={
-                      isMinimumOrderMet
-                        ? "checkmark-circle"
-                        : "information-circle-outline"
-                    }
-                    size={21}
-                    color={
-                      isMinimumOrderMet
-                        ? "#15803D"
-                        : PREMIUM.primary
-                    }
-                  />
-                </View>
-
-                <View style={styles.minimumOrderContent}>
-                  <Text style={styles.minimumOrderTitle}>
-                    Minimum Order: ₹
-                    {Number(minimumOrder).toFixed(2)}
-                  </Text>
-
-                  <Text style={styles.minimumOrderSubtitle}>
-                    {isMinimumOrderMet
-                      ? "Minimum order amount reached."
-                      : `Add ₹${minimumOrderRemaining.toFixed(
-                          2
-                        )} more to continue.`}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </>
+            <Text style={styles.warningText}>
+              Select a delivery location to view
+              matching saved addresses.
+            </Text>
+          </View>
         )}
 
-        {/* PAYMENT SECTION */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionAccent} />
-
-          <View style={styles.sectionTitleWrap}>
-            <Text style={styles.sectionTitle}>
-              Payment
-            </Text>
-
-            <Text style={styles.sectionSubtitle}>
-              Select payment method on next step
-            </Text>
-          </View>
-
-          <View style={styles.sectionIcon}>
+        {address && Number(minimumOrder) > 0 && (
+          <View style={styles.minimumCard}>
             <Ionicons
-              name="card-outline"
-              size={17}
-              color={PREMIUM.primary}
+              name={
+                isMinimumOrderMet
+                  ? "checkmark-circle"
+                  : "information-circle-outline"
+              }
+              size={23}
+              color={
+                isMinimumOrderMet
+                  ? C.green
+                  : C.primary
+              }
             />
-          </View>
-        </View>
 
-        {/* ORIGINAL PAYMENT NAVIGATION */}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.minimumTitle}>
+                Minimum Order: {money(minimumOrder)}
+              </Text>
+
+              <Text style={styles.minimumSubtitle}>
+                {isMinimumOrderMet
+                  ? "Minimum order amount reached."
+                  : `Add ${money(minimumOrderRemaining)} more to continue.`}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* PAYMENT */}
+
+        <SectionHeading
+          title="Payment"
+          subtitle="Select payment method on next step"
+          icon="card-outline"
+        />
+
         <Pressable
-          onPress={() => router.push("/checkout/payment")}
-          style={({ pressed }) => [
-            styles.paymentCard,
-            pressed && styles.pressed,
-          ]}
+          style={styles.actionCard}
+          onPress={continueToPayment}
         >
-          <View style={styles.paymentIcon}>
+          <View style={styles.actionIcon}>
             <Ionicons
               name="wallet-outline"
-              size={21}
-              color={PREMIUM.primary}
+              size={22}
+              color={C.primary}
             />
           </View>
 
-          <View style={styles.paymentContent}>
-            <Text style={styles.paymentTitle}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>
               Choose payment method
             </Text>
-
-            <Text style={styles.paymentSubtitle}>
+            <Text style={styles.actionSubtitle}>
               Cash on Delivery available now
             </Text>
           </View>
 
-          <View style={styles.chevronBox}>
-            <Ionicons
-              name="chevron-forward"
-              size={17}
-              color={PREMIUM.primary}
-            />
-          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={19}
+            color={C.primary}
+          />
         </Pressable>
 
-        {/* ORIGINAL TIP COMPONENT */}
-        <View style={styles.tipWrap}>
-          <TipSelector tip={tip} setTip={setTip} />
+        {/* TIP */}
+
+        <View style={{ marginTop: 5 }}>
+          <TipSelector
+            tip={tip}
+            setTip={setTip}
+          />
+        </View>
+
+        {/* COUPON */}
+
+        <View style={styles.couponCard}>
+          <View style={styles.couponHeading}>
+            <View style={styles.couponIcon}>
+              <Ionicons
+                name="pricetag-outline"
+                size={22}
+                color={C.primary}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.couponTitle}>
+                Apply Coupon
+              </Text>
+              <Text style={styles.couponSubtitle}>
+                Have a promo code? Save on your order.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.couponInputRow}>
+            <TextInput
+              style={styles.couponInput}
+              placeholder="Enter coupon code"
+              placeholderTextColor={C.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              value={couponCode}
+              editable={
+                !couponLoading && !appliedCoupon
+              }
+              onChangeText={(value) => {
+                setCouponCode(value.toUpperCase());
+                setCouponError("");
+              }}
+            />
+
+            <Pressable
+              style={[
+                styles.couponButton,
+                (couponLoading ||
+                  (!appliedCoupon &&
+                    !couponCode.trim())) &&
+                  styles.disabled,
+              ]}
+              disabled={
+                couponLoading ||
+                (!appliedCoupon &&
+                  !couponCode.trim())
+              }
+              onPress={
+                appliedCoupon
+                  ? removeCoupon
+                  : applyCoupon
+              }
+            >
+              {couponLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={C.white}
+                />
+              ) : (
+                <Text style={styles.couponButtonText}>
+                  {appliedCoupon ? "Remove" : "Apply"}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+
+          {!!couponError && (
+            <View style={styles.errorRow}>
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color="#C93652"
+              />
+              <Text style={styles.errorText}>
+                {couponError}
+              </Text>
+            </View>
+          )}
+
+          {!!appliedCoupon && (
+            <View style={styles.successRow}>
+              <Ionicons
+                name="checkmark-circle"
+                size={19}
+                color={C.green}
+              />
+
+              <Text style={styles.successText}>
+                {appliedCoupon.code} applied — you
+                save {money(discount)}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* BILL DETAILS */}
-        <View style={styles.billSection}>
+
+        <View style={styles.billCard}>
           <View style={styles.billHeader}>
-            <View style={styles.billHeadingContent}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.billTitle}>
                 Bill Details
               </Text>
 
               <Text style={styles.billSubtitle}>
-                Final amount for your order
+                Estimated amount for your order
               </Text>
             </View>
 
             <View style={styles.billIcon}>
               <Ionicons
                 name="receipt-outline"
-                size={19}
-                color={PREMIUM.primary}
+                size={20}
+                color={C.primary}
               />
             </View>
           </View>
 
-          {/* ORIGINAL BILL CALCULATIONS */}
           <BillDetails
             itemTotal={itemTotal}
-            platformFee={displayedPlatformFee}
-            deliveryFee={displayedDeliveryFee}
+            platformFee={platformFee}
+            deliveryFee={deliveryFee}
             tip={tip}
             total={total}
           />
+
+          {!!appliedCoupon && (
+            <>
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>
+                  Coupon ({appliedCoupon.code})
+                </Text>
+
+                <Text style={styles.discountText}>
+                  −{money(discount)}
+                </Text>
+              </View>
+
+              <View style={styles.billDivider} />
+
+              <View style={styles.billRow}>
+                <Text style={styles.finalLabel}>
+                  Estimated total after coupon
+                </Text>
+
+                <Text style={styles.finalValue}>
+                  {money(estimatedTotal)}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
 
-      {/* FIXED BOTTOM TOTAL BAR */}
+      {/* FIXED BOTTOM BAR */}
+
       <View
         style={[
           styles.bottom,
           {
-            paddingBottom: Math.max(insets.bottom, 12),
+            paddingBottom: Math.max(
+              insets.bottom,
+              12
+            ),
           },
         ]}
       >
         <View style={styles.bottomTotal}>
           <Text style={styles.totalLabel}>
-            Total to Pay
+            {appliedCoupon
+              ? "Estimated Total"
+              : "Total to Pay"}
           </Text>
 
-          <Text style={styles.total}>
-            ₹{total.toFixed(2)}
+          <Text style={styles.totalValue}>
+            {money(estimatedTotal)}
           </Text>
         </View>
 
-        {/* ORIGINAL CONTINUE NAVIGATION */}
         <Pressable
-          onPress={() => router.push("/checkout/payment")}
           style={({ pressed }) => [
-            styles.continue,
-            pressed && styles.continuePressed,
+            styles.continueButton,
+            pressed && styles.pressed,
           ]}
+          onPress={continueToPayment}
         >
           <Text style={styles.continueText}>
             Continue
@@ -594,8 +1025,8 @@ export default function Checkout() {
           <View style={styles.arrowCircle}>
             <Ionicons
               name="arrow-forward"
-              size={17}
-              color={PREMIUM.primary}
+              size={19}
+              color={C.primary}
             />
           </View>
         </Pressable>
@@ -604,164 +1035,85 @@ export default function Checkout() {
   );
 }
 
+/* =========================================
+   PREMIUM STYLES
+========================================= */
+
 const styles = StyleSheet.create({
-  // PAGE
   container: {
     flex: 1,
-    backgroundColor: PREMIUM.background,
+    backgroundColor: C.background,
   },
 
-  scrollView: {
-    flex: 1,
-  },
-
-  scroll: {
-    paddingTop: 3,
-  },
-
-  // FIXED FULL-WIDTH HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 21,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
-  },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
+  header: {
+    backgroundColor: C.white,
+    paddingHorizontal: 15,
+    paddingBottom: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
 
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
 
-  headerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+  backButton: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  headerSide: {
-    width: 44,
-    height: 44,
-  },
-
-  headerTitleBox: {
+  headerCenter: {
     flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
+    minWidth: 0,
+    alignItems: "flex-start",
+    paddingHorizontal: 12,
   },
 
   headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 17,
-    fontWeight: "800",
+    color: C.navy,
+    fontSize: 18,
+    fontWeight: "900",
     letterSpacing: -0.3,
   },
 
   headerSubtitle: {
-    color: "#FFE0EB",
+    color: C.muted,
     fontSize: 10,
-    fontWeight: "500",
-    marginTop: 4,
+    marginTop: 3,
   },
 
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 19,
+  headerTrailing: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: C.soft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  inlineRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
   },
 
-  headerInfoIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfoBadge: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-
-  // DELIVERY CARD
   deliveryCard: {
     marginHorizontal: 16,
     marginTop: 17,
     minHeight: 78,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    padding: 14,
     borderRadius: 21,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
+    borderColor: C.border,
     flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#7A2949",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    gap: 12,
     elevation: 1,
   },
 
@@ -769,32 +1121,21 @@ const styles = StyleSheet.create({
     width: 47,
     height: 47,
     borderRadius: 24,
-    backgroundColor: PREMIUM.pinkSoft,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  deliveryInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  deliveryTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-
   deliveryTitle: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 13,
     fontWeight: "800",
   },
 
   deliverySubtitle: {
-    marginTop: 5,
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 10,
+    marginTop: 5,
   },
 
   fastBadge: {
@@ -802,32 +1143,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 15,
-    backgroundColor: PREMIUM.pinkSoft,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  fastDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
-    marginRight: 4,
+    backgroundColor: C.soft,
   },
 
   fastText: {
-    color: PREMIUM.primary,
+    color: C.primary,
     fontSize: 8,
     fontWeight: "900",
   },
 
-  // FREE DELIVERY
-  freeDeliveryWrap: {
-    marginTop: 3,
-  },
-
-  // SECTION HEADERS
-  sectionHeader: {
+  sectionHeading: {
     marginHorizontal: 16,
     marginTop: 25,
     marginBottom: 12,
@@ -839,99 +1164,83 @@ const styles = StyleSheet.create({
     width: 4,
     height: 36,
     borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
+    backgroundColor: C.primary,
     marginRight: 11,
   },
 
-  sectionTitleWrap: {
-    flex: 1,
-  },
-
   sectionTitle: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 17,
     fontWeight: "900",
-    letterSpacing: -0.3,
   },
 
   sectionSubtitle: {
-    marginTop: 4,
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 10,
+    marginTop: 4,
   },
 
   sectionIcon: {
     width: 35,
     height: 35,
     borderRadius: 18,
-    backgroundColor: PREMIUM.pinkSoft,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // ADDRESS
-  addressLoading: {
+  loadingCard: {
     marginHorizontal: 16,
     minHeight: 78,
-    backgroundColor: PREMIUM.white,
     borderRadius: 20,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 10,
   },
 
-  addressLoadingText: {
-    color: PREMIUM.muted,
+  mutedText: {
+    color: C.muted,
     fontSize: 11,
-    fontWeight: "600",
   },
 
-  addressCardWrap: {
-    borderRadius: 20,
-  },
-
-  noAddress: {
+  actionCard: {
     marginHorizontal: 16,
-    minHeight: 78,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    minHeight: 76,
+    padding: 14,
     borderRadius: 21,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
+    borderColor: C.border,
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+    elevation: 1,
   },
 
-  noAddressIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: PREMIUM.pinkSoft,
+  actionIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  noAddressContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  noAddressText: {
-    color: PREMIUM.primary,
-    fontWeight: "800",
+  actionTitle: {
+    color: C.navy,
     fontSize: 13,
+    fontWeight: "800",
   },
 
-  noAddressSubtitle: {
-    color: PREMIUM.muted,
+  actionSubtitle: {
+    color: C.muted,
     fontSize: 10,
     marginTop: 4,
   },
 
-  // LOCATION WARNING
-  locationWarning: {
+  warning: {
     marginHorizontal: 16,
     marginTop: 12,
     padding: 13,
@@ -944,7 +1253,7 @@ const styles = StyleSheet.create({
     gap: 9,
   },
 
-  locationWarningText: {
+  warningText: {
     flex: 1,
     color: "#92400E",
     fontSize: 11,
@@ -952,124 +1261,147 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // MINIMUM ORDER
-  minimumOrderCard: {
+  minimumCard: {
     marginHorizontal: 16,
     marginTop: 12,
     padding: 13,
     borderRadius: 19,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
+    borderColor: C.border,
     flexDirection: "row",
     alignItems: "center",
+    gap: 11,
   },
 
-  minimumOrderIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  minimumOrderContent: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
-  minimumOrderTitle: {
-    color: PREMIUM.navy,
+  minimumTitle: {
+    color: C.navy,
     fontSize: 12,
     fontWeight: "800",
   },
 
-  minimumOrderSubtitle: {
-    color: PREMIUM.muted,
+  minimumSubtitle: {
+    color: C.muted,
     fontSize: 10,
     marginTop: 5,
   },
 
-  // PAYMENT CARD
-  paymentCard: {
+  couponCard: {
     marginHorizontal: 16,
-    minHeight: 76,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 21,
-    backgroundColor: PREMIUM.white,
+    marginTop: 20,
+    padding: 15,
+    borderRadius: 22,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
+    borderColor: C.border,
+  },
+
+  couponHeading: {
     flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#7A2949",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
+    marginBottom: 14,
+    gap: 12,
   },
 
-  paymentIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 23,
-    backgroundColor: PREMIUM.pinkSoft,
+  couponIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  paymentContent: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+  couponTitle: {
+    color: C.navy,
+    fontSize: 15,
+    fontWeight: "900",
   },
 
-  paymentTitle: {
-    color: PREMIUM.navy,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  paymentSubtitle: {
-    marginTop: 4,
-    color: PREMIUM.muted,
+  couponSubtitle: {
+    color: C.muted,
     fontSize: 10,
+    marginTop: 4,
   },
 
-  chevronBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: PREMIUM.pinkSoft,
+  couponInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  couponInput: {
+    flex: 1,
+    minWidth: 0,
+    height: 48,
+    paddingHorizontal: 13,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.background,
+    color: C.navy,
+    fontWeight: "700",
+  },
+
+  couponButton: {
+    minWidth: 83,
+    height: 48,
+    paddingHorizontal: 12,
+    borderRadius: 13,
+    backgroundColor: C.primary,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // TIP SECTION
-  tipWrap: {
-    marginTop: 5,
+  couponButtonText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: "900",
   },
 
-  // BILL DETAILS
-  billSection: {
+  disabled: {
+    opacity: 0.5,
+  },
+
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 11,
+  },
+
+  errorText: {
+    flex: 1,
+    color: "#C93652",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  successRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 11,
+    backgroundColor: "#F0FDF4",
+  },
+
+  successText: {
+    color: C.green,
+    fontSize: 11,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  billCard: {
     marginHorizontal: 16,
     marginTop: 24,
     padding: 15,
     borderRadius: 22,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
-    shadowColor: "#7A2949",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    borderColor: C.border,
     elevation: 1,
   },
 
@@ -1080,32 +1412,67 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
 
-  billHeadingContent: {
-    flex: 1,
-  },
-
   billTitle: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 16,
     fontWeight: "900",
   },
 
   billSubtitle: {
-    marginTop: 4,
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 10,
+    marginTop: 4,
   },
 
   billIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: PREMIUM.pinkSoft,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // FIXED BOTTOM BAR
+  billRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    gap: 10,
+  },
+
+  billLabel: {
+    color: "#59606D",
+    fontSize: 12,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  discountText: {
+    color: C.green,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  billDivider: {
+    height: 1,
+    backgroundColor: C.border,
+    marginTop: 14,
+  },
+
+  finalLabel: {
+    color: C.navy,
+    fontSize: 12,
+    fontWeight: "800",
+    flex: 1,
+  },
+
+  finalValue: {
+    color: C.primary,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
   bottom: {
     position: "absolute",
     left: 0,
@@ -1114,20 +1481,13 @@ const styles = StyleSheet.create({
     minHeight: 78,
     paddingHorizontal: 16,
     paddingTop: 12,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderTopWidth: 1,
-    borderTopColor: PREMIUM.border,
+    borderTopColor: C.border,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     elevation: 10,
-    shadowColor: PREMIUM.navy,
-    shadowOffset: {
-      width: 0,
-      height: -3,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
   },
 
   bottomTotal: {
@@ -1137,37 +1497,32 @@ const styles = StyleSheet.create({
   },
 
   totalLabel: {
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 10,
     fontWeight: "700",
   },
 
-  total: {
-    marginTop: 4,
-    color: PREMIUM.navy,
+  totalValue: {
+    color: C.navy,
     fontSize: 21,
     fontWeight: "900",
+    marginTop: 4,
   },
 
-  continue: {
+  continueButton: {
     minWidth: 150,
     height: 52,
     paddingLeft: 20,
     paddingRight: 7,
     borderRadius: 27,
-    backgroundColor: PREMIUM.primary,
+    backgroundColor: C.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
-  continuePressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-
   continueText: {
-    color: PREMIUM.white,
+    color: C.white,
     fontSize: 13,
     fontWeight: "900",
     marginRight: 12,
@@ -1177,57 +1532,46 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
   },
 
   pressed: {
-    opacity: 0.8,
+    opacity: 0.85,
     transform: [{ scale: 0.98 }],
   },
 
-  // EMPTY CART
   empty: {
     flex: 1,
     paddingHorizontal: 30,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
 
-  emptyIconOuter: {
+  emptyIcon: {
     width: 112,
     height: 112,
     borderRadius: 56,
-    backgroundColor: PREMIUM.pinkSoft,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
   },
 
-  emptyIcon: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: PREMIUM.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   emptyTitle: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 21,
     fontWeight: "900",
     textAlign: "center",
   },
 
   emptySubtitle: {
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 12,
     lineHeight: 19,
     textAlign: "center",
     marginTop: 8,
-    maxWidth: 280,
   },
 
   emptyButton: {
@@ -1236,7 +1580,7 @@ const styles = StyleSheet.create({
     height: 52,
     paddingHorizontal: 19,
     borderRadius: 27,
-    backgroundColor: PREMIUM.primary,
+    backgroundColor: C.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1244,7 +1588,7 @@ const styles = StyleSheet.create({
   },
 
   emptyButtonText: {
-    color: PREMIUM.white,
+    color: C.white,
     fontSize: 12,
     fontWeight: "900",
   },

@@ -1,178 +1,627 @@
 
-import { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Easing,
   Image,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
-  StatusBar,
-  Platform,
 } from "react-native";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 
 import { useCart } from "../../context";
+
 import {
   getProductById,
   getProductsByCategory,
 } from "../../services/productService";
 
-const PREMIUM = {
+const C = {
   primary: "#C9004F",
   primaryDark: "#A90042",
   navy: "#172033",
   white: "#FFFFFF",
   background: "#FFF9FB",
-  pinkSoft: "#FFF0F5",
-  pinkLight: "#FDE3EC",
+  soft: "#FFF0F5",
   border: "#E9DDE2",
   muted: "#858B95",
   gray: "#68717F",
-  imageBg: "#F8F5F1",
-  gold: "#FFE19A",
+  green: "#16844A",
+  imageBg: "#FFFFFF",
 };
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
+const formatMoney = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+
+function getQuantity(cart, id) {
+  const item = (cart || []).find((entry) => {
+    const productId =
+      entry?.id ?? entry?.product?.id;
+
+    return String(productId) === String(id);
+  });
+
+  return Number(item?.quantity) || 0;
+}
+
+function getImageSource(product) {
+  return product?.image
+    ? { uri: product.image }
+    : null;
+}
+
+function formatDeliveryTime(value) {
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
+
+  const text = String(value).trim();
+
+  return /min|hour|hr/i.test(text)
+    ? text
+    : `${text} mins`;
+}
+
+function InformationRow({ label, value, last = false }) {
+  if (
+    value == null ||
+    String(value).trim() === ""
+  ) {
+    return null;
+  }
+
+  return (
+    <View
+      style={[
+        styles.informationRow,
+        last && styles.informationRowLast,
+      ]}
+    >
+      <Text style={styles.informationLabel}>
+        {label}
+      </Text>
+
+      <Text style={styles.informationValue}>
+        {String(value)}
+      </Text>
+    </View>
+  );
+}
+
+function RelatedProduct({
+  item,
+  cart,
+  onOpen,
+  onAdd,
+  onIncrease,
+  onDecrease,
+  imageRefs,
+}) {
+  const quantity = getQuantity(cart, item.id);
+
+  const imageSource = getImageSource(item);
+
+  const mrp = Number(item.mrp || 0);
+  const price = Number(item.price || 0);
+
+  const discount =
+    Number(item.discount) > 0
+      ? Number(item.discount)
+      : mrp > price && price > 0
+      ? Math.round(((mrp - price) / mrp) * 100)
+      : 0;
+
+  return (
+    <Pressable
+      style={styles.relatedCard}
+      onPress={() => onOpen(item.id)}
+    >
+      <View
+        style={styles.relatedImageBox}
+        ref={(ref) => {
+          imageRefs.current[String(item.id)] = ref;
+        }}
+        collapsable={false}
+      >
+        {imageSource ? (
+          <Image
+            source={imageSource}
+            style={styles.relatedImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <Ionicons
+            name="image-outline"
+            size={30}
+            color={C.muted}
+          />
+        )}
+
+        {discount > 0 && (
+          <View style={styles.relatedDiscount}>
+            <Text style={styles.relatedDiscountText}>
+              {discount}% OFF
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <Text
+        style={styles.relatedName}
+        numberOfLines={2}
+      >
+        {item.name}
+      </Text>
+
+      <Text
+        style={styles.relatedWeight}
+        numberOfLines={1}
+      >
+        {item.weight || item.unit || ""}
+      </Text>
+
+      <View style={styles.relatedPriceRow}>
+        <Text style={styles.relatedPrice}>
+          {formatMoney(price)}
+        </Text>
+
+        {mrp > price && (
+          <Text style={styles.relatedMrp}>
+            {formatMoney(mrp)}
+          </Text>
+        )}
+      </View>
+
+      {quantity === 0 ? (
+        <Pressable
+          style={styles.relatedAdd}
+          onPress={(event) => {
+            event.stopPropagation?.();
+            onAdd(item);
+          }}
+        >
+          <Ionicons
+            name="add"
+            size={17}
+            color={C.primary}
+          />
+          <Text style={styles.relatedAddText}>
+            ADD
+          </Text>
+        </Pressable>
+      ) : (
+        <View style={styles.relatedQuantity}>
+          <Pressable
+            style={styles.relatedQtyButton}
+            onPress={(event) => {
+              event.stopPropagation?.();
+              onDecrease(item.id);
+            }}
+            hitSlop={5}
+          >
+            <Ionicons
+              name="remove"
+              size={20}
+              color={C.white}
+            />
+          </Pressable>
+
+          <Text style={styles.relatedQtyText}>
+            {quantity}
+          </Text>
+
+          <Pressable
+            style={styles.relatedQtyButton}
+            onPress={(event) => {
+              event.stopPropagation?.();
+              onIncrease(item);
+            }}
+            hitSlop={5}
+          >
+            <Ionicons
+              name="add"
+              size={20}
+              color={C.white}
+            />
+          </Pressable>
+        </View>
+      )}
+    </Pressable>
+  );
+}
 
 export default function ProductDetails() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const id = Array.isArray(params.id)
+    ? params.id[0]
+    : params.id;
+
   const insets = useSafeAreaInsets();
 
   const {
-    cart,
+    cart = [],
     itemCount = 0,
     addToCart,
     increase,
     decrease,
+    location,
   } = useCart();
 
   const [product, setProduct] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ORIGINAL PRODUCT API LOGIC
+  const mainImageRef = useRef(null);
+  const cartIconRef = useRef(null);
+  const relatedImageRefs = useRef({});
+
+  // Flying-to-cart animation
+  const flyX = useRef(new Animated.Value(0)).current;
+  const flyY = useRef(new Animated.Value(0)).current;
+  const flyScale = useRef(new Animated.Value(1)).current;
+  const flyOpacity = useRef(new Animated.Value(0)).current;
+
+  const [flyingImage, setFlyingImage] = useState(null);
+  const [flyStart, setFlyStart] = useState({
+    x: 0,
+    y: 0,
+  });
+
+  const animationRunning = useRef(false);
+  const animationToken = useRef(0);
+
+  // ORIGINAL PRODUCT FETCHING LOGIC
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    const loadProduct = async () => {
       try {
         setLoading(true);
+        setProduct(null);
+        setRelated([]);
+
         const data = await getProductById(id);
+
+        if (!active) return;
+
         setProduct(data);
 
         if (data?.categoryId) {
-          const list = await getProductsByCategory(data.categoryId);
+          const list = await getProductsByCategory(
+            data.categoryId
+          );
+
+          if (!active) return;
+
           setRelated(
-            list
-              .filter((p) => String(p.id) !== String(data.id))
+            (Array.isArray(list) ? list : [])
+              .filter(
+                (p) =>
+                  String(p.id) !== String(data.id)
+              )
               .slice(0, 5)
           );
         }
-      } catch (e) {
-        console.log("Product details error:", e);
+      } catch (error) {
+        console.log(
+          "Product details error:",
+          error
+        );
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
-    })();
+    };
+
+    loadProduct();
+
+    return () => {
+      active = false;
+      animationToken.current += 1;
+      animationRunning.current = false;
+      flyX.stopAnimation();
+      flyY.stopAnimation();
+      flyScale.stopAnimation();
+      flyOpacity.stopAnimation();
+    };
   }, [id]);
 
   const topInset =
-    Platform.OS === "ios" || Platform.Version >= 35
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" &&
+      Platform.Version >= 35)
       ? insets.top
       : 0;
 
-  // FIXED HEADER
-  function renderHeader() {
+  const quantity = product
+    ? getQuantity(cart, product.id)
+    : 0;
+
+  const deliveryTime = formatDeliveryTime(
+    location?.deliveryTime
+  );
+
+  const startFlyAnimation = (
+    selectedProduct,
+    sourceRef
+  ) => {
+    const imageSource = getImageSource(
+      selectedProduct
+    );
+
+    if (
+      !imageSource ||
+      animationRunning.current
+    ) {
+      return;
+    }
+
+    const source = sourceRef?.current;
+    const target = cartIconRef.current;
+
+    if (
+      !source?.measureInWindow ||
+      !target?.measureInWindow
+    ) {
+      return;
+    }
+
+    source.measureInWindow(
+      (sx, sy, sw, sh) => {
+        target.measureInWindow(
+          (tx, ty, tw, th) => {
+            if (
+              !sw ||
+              !sh ||
+              !tw ||
+              !th
+            ) {
+              return;
+            }
+
+            const token = ++animationToken.current;
+
+            const startX =
+              sx + sw / 2 - 27;
+
+            const startY =
+              sy + sh / 2 - 27;
+
+            const endX =
+              tx + tw / 2 - 27;
+
+            const endY =
+              ty + th / 2 - 27;
+
+            animationRunning.current = true;
+
+            setFlyStart({
+              x: startX,
+              y: startY,
+            });
+
+            setFlyingImage(imageSource);
+
+            flyX.setValue(0);
+            flyY.setValue(0);
+            flyScale.setValue(1);
+            flyOpacity.setValue(1);
+
+            Animated.parallel([
+              Animated.timing(flyX, {
+                toValue: endX - startX,
+                duration: 1800,
+                easing: Easing.inOut(Easing.cubic),
+                useNativeDriver: true,
+              }),
+
+              Animated.timing(flyY, {
+                toValue: endY - startY,
+                duration: 1800,
+                easing: Easing.inOut(Easing.cubic),
+                useNativeDriver: true,
+              }),
+
+              Animated.timing(flyScale, {
+                toValue: 0.28,
+                duration: 1800,
+                easing: Easing.in(Easing.quad),
+                useNativeDriver: true,
+              }),
+
+              Animated.sequence([
+                Animated.delay(850),
+                Animated.timing(flyOpacity, {
+                  toValue: 0,
+                  duration: 300,
+                  useNativeDriver: true,
+                }),
+              ]),
+            ]).start(() => {
+              if (
+                token !== animationToken.current
+              ) {
+                return;
+              }
+
+              animationRunning.current = false;
+              setFlyingImage(null);
+            });
+          }
+        );
+      }
+    );
+  };
+
+  const animateRelated = (item) => {
+    const source = {
+      current:
+        relatedImageRefs.current[String(item.id)],
+    };
+
+    startFlyAnimation(item, source);
+  };
+
+  const handleAdd = (item, isMain = false) => {
+    addToCart(item);
+
+    if (isMain) {
+      startFlyAnimation(
+        item,
+        mainImageRef
+      );
+    } else {
+      animateRelated(item);
+    }
+  };
+
+  const handleIncrease = (
+    item,
+    isMain = false
+  ) => {
+    increase(item.id);
+
+    if (isMain) {
+      startFlyAnimation(
+        item,
+        mainImageRef
+      );
+    } else {
+      animateRelated(item);
+    }
+  };
+
+  const handleDecrease = (productId) => {
+    decrease(productId);
+  };
+
+  const renderHeader = () => (
+    <View
+      style={[
+        styles.header,
+        {
+          paddingTop: topInset + 10,
+        },
+      ]}
+    >
+      <Pressable
+        style={styles.headerButton}
+        onPress={() => router.back()}
+      >
+        <Ionicons
+          name="chevron-back"
+          size={23}
+          color={C.navy}
+        />
+      </Pressable>
+
+      <View style={styles.headerCenter}>
+        <Text style={styles.headerTitle}>
+          Product Details
+        </Text>
+
+        <Text style={styles.headerSubtitle}>
+          Fresh picks, delivered fast
+        </Text>
+      </View>
+
+      <Pressable
+        ref={cartIconRef}
+        collapsable={false}
+        style={styles.headerButton}
+        onPress={() =>
+          router.push("/(tabs)/cart")
+        }
+      >
+        <Ionicons
+          name="bag-outline"
+          size={22}
+          color={C.primary}
+        />
+
+        {itemCount > 0 && (
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>
+              {itemCount > 99
+                ? "99+"
+                : itemCount}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </View>
+  );
+
+  const renderFlyingImage = () => {
+    if (!flyingImage) return null;
+
     return (
-      <View
+      <Animated.View
+        pointerEvents="none"
         style={[
-          styles.headerBackground,
-          { paddingTop: topInset + 16 },
+          styles.flyingImageBox,
+          {
+            left: flyStart.x,
+            top: flyStart.y,
+            opacity: flyOpacity,
+            transform: [
+              { translateX: flyX },
+              { translateY: flyY },
+              { scale: flyScale },
+            ],
+          },
         ]}
       >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
-
-        <View style={styles.headerRow}>
-          <Pressable
-            style={styles.headerButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
-
-          <View style={styles.headerTitleBox}>
-            <Text style={styles.headerTitle}>
-              Product Details
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              Discover your favorites
-            </Text>
-          </View>
-
-          <Pressable
-            style={styles.headerButton}
-            onPress={() => router.push("/(tabs)/cart")}
-          >
-            <Ionicons
-              name="bag-outline"
-              size={21}
-              color={PREMIUM.white}
-            />
-            {itemCount > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>
-                  {itemCount > 99 ? "99+" : itemCount}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="sparkles-outline"
-              size={19}
-              color={PREMIUM.gold}
-            />
-          </View>
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              Fresh picks for you
-            </Text>
-            <Text style={styles.headerInfoSubtitle}>
-              Quality groceries at great prices
-            </Text>
-          </View>
-          <Ionicons
-            name="checkmark-circle-outline"
-            size={21}
-            color={PREMIUM.white}
-          />
-        </View>
-      </View>
+        <Image
+          source={flyingImage}
+          style={styles.flyingImage}
+          resizeMode="contain"
+        />
+      </Animated.View>
     );
-  }
+  };
 
   if (loading) {
     return (
       <View style={styles.container}>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={PREMIUM.primary}
+          barStyle="dark-content"
+          backgroundColor={C.white}
         />
+
         {renderHeader()}
-        <View style={styles.loadingContainer}>
+
+        <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color={PREMIUM.primary}
+            color={C.primary}
           />
+
+          <Text style={styles.stateText}>
+            Loading product...
+          </Text>
         </View>
       </View>
     );
@@ -182,26 +631,28 @@ export default function ProductDetails() {
     return (
       <View style={styles.container}>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={PREMIUM.primary}
+          barStyle="dark-content"
+          backgroundColor={C.white}
         />
+
         {renderHeader()}
-        <View style={styles.loadingContainer}>
-          <View style={styles.errorIcon}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={32}
-              color={PREMIUM.primary}
-            />
-          </View>
-          <Text style={styles.errorText}>
+
+        <View style={styles.centerState}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={44}
+            color={C.primary}
+          />
+
+          <Text style={styles.stateTitle}>
             Product not found
           </Text>
+
           <Pressable
-            style={styles.backButton}
+            style={styles.stateButton}
             onPress={() => router.back()}
           >
-            <Text style={styles.backButtonText}>
+            <Text style={styles.stateButtonText}>
               Go Back
             </Text>
           </Pressable>
@@ -210,28 +661,70 @@ export default function ProductDetails() {
     );
   }
 
-  // ORIGINAL CART LOOKUP LOGIC
-  const cartItem = cart.find((item) => {
-    if (!item) return false;
-    const cid = item.id ?? item.product?.id;
-    return String(cid) === String(product.id);
-  });
+  const imageSource = getImageSource(product);
 
-  const quantity = Number(cartItem?.quantity) || 0;
+  const price = Number(product.price || 0);
+  const mrp = Number(product.mrp || 0);
 
-  const imageSource = product.image
-    ? { uri: product.image }
-    : null;
+  const saveAmount = Math.max(
+    0,
+    mrp - price
+  );
 
-  const saveAmount =
-    Number(product.mrp || 0) -
-    Number(product.price || 0);
+  const discount =
+    Number(product.discount) > 0
+      ? Number(product.discount)
+      : mrp > price && price > 0
+      ? Math.round(
+          ((mrp - price) / mrp) * 100
+        )
+      : 0;
+
+  const categoryName =
+    typeof product.category === "string"
+      ? product.category
+      : product.category?.name ||
+        product.categoryName ||
+        null;
+
+  const rating = Number(product.rating || 0);
+  const reviews = Number(product.reviews || 0);
+
+  const productWeight =
+    product.weight || product.unit || null;
+
+  const productShelfLife =
+    product.shelfLife ||
+    product.shelf_life ||
+    null;
+
+  const productBrand =
+    product.brand || null;
+
+  const productUnit =
+    product.unit &&
+    product.unit !== productWeight
+      ? product.unit
+      : null;
+
+  const hasInformation = [
+    categoryName,
+    productWeight,
+    productBrand,
+    productUnit,
+    rating > 0 ? rating : null,
+    productShelfLife,
+  ].some(
+    (value) =>
+      value != null &&
+      String(value).trim() !== ""
+  );
 
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={C.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
@@ -243,296 +736,381 @@ export default function ProductDetails() {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: 28,
+          },
+        ]}
       >
-        {/* PRODUCT IMAGE */}
-        <View style={styles.imageSection}>
-          <View style={styles.imageDecor} />
-
-          <View style={styles.imageBox}>
-            {imageSource ? (
-              <Image
-                source={imageSource}
-                style={styles.productImage}
-                resizeMode="cover"
-              />
-            ) : (
+        {/* FULL PRODUCT IMAGE */}
+        <View
+          style={styles.imageSection}
+          ref={mainImageRef}
+          collapsable={false}
+        >
+          {imageSource ? (
+            <Image
+              source={imageSource}
+              style={styles.productImage}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={styles.imageFallback}>
               <Ionicons
                 name="image-outline"
-                size={55}
-                color={PREMIUM.muted}
+                size={52}
+                color={C.muted}
               />
-            )}
-          </View>
+            </View>
+          )}
 
-          {product.discount > 0 && (
+          {discount > 0 && (
             <View style={styles.discountBadge}>
-              <Ionicons
-                name="pricetag"
-                size={12}
-                color={PREMIUM.white}
-              />
-              <Text style={styles.discountText}>
-                {product.discount}% OFF
+              <Text style={styles.discountBadgeText}>
+                {discount}% OFF
               </Text>
             </View>
           )}
         </View>
 
-        {/* PRODUCT DETAILS */}
-        <View style={styles.infoContainer}>
-          <View style={styles.categoryBadge}>
-            <Ionicons
-              name="grid-outline"
-              size={12}
-              color={PREMIUM.primary}
-            />
-            <Text style={styles.categoryText}>
-              {product.category}
+        {/* PRODUCT NAME AND PRICE */}
+        <View style={styles.productContent}>
+          {!!categoryName && (
+            <Text style={styles.categoryLabel}>
+              {categoryName.toUpperCase()}
             </Text>
-          </View>
+          )}
 
           <Text style={styles.productName}>
             {product.name}
           </Text>
 
           <View style={styles.metaRow}>
-            <View style={styles.weightBadge}>
-              <Ionicons
-                name="cube-outline"
-                size={14}
-                color={PREMIUM.gray}
-              />
-              <Text style={styles.weight}>
-                {product.weight}
-              </Text>
-            </View>
+            <Text style={styles.weightText}>
+              {productWeight || ""}
+            </Text>
 
-            <View style={styles.ratingRow}>
-              <Ionicons
-                name="star"
-                size={15}
-                color="#F4B740"
-              />
-              <Text style={styles.ratingText}>
-                {product.rating || 0}
-              </Text>
-              <Text style={styles.reviewText}>
-                ({product.reviews || 0})
-              </Text>
-            </View>
+            {rating > 0 && (
+              <View style={styles.ratingRow}>
+                <Ionicons
+                  name="star"
+                  size={16}
+                  color={C.primary}
+                />
+
+                <Text style={styles.ratingValue}>
+                  {rating.toFixed(1)}
+                </Text>
+
+                {reviews > 0 && (
+                  <Text style={styles.reviewCount}>
+                    ({reviews})
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
 
-          {/* PRICE */}
-          <View style={styles.priceCard}>
-            <View style={styles.priceRow}>
-              <Text style={styles.price}>
-                ₹{product.price}
-              </Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>
+              {formatMoney(price)}
+            </Text>
 
-              {product.mrp > product.price && (
-                <Text style={styles.mrp}>
-                  ₹{product.mrp}
-                </Text>
-              )}
-            </View>
+            {mrp > price && (
+              <Text style={styles.mrp}>
+                {formatMoney(mrp)}
+              </Text>
+            )}
 
             {saveAmount > 0 && (
-              <View style={styles.saveBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={14}
-                  color={PREMIUM.primary}
-                />
-                <Text style={styles.saveBadgeText}>
-                  Save ₹{saveAmount}
+              <View style={styles.savingLabel}>
+                <Text style={styles.savingText}>
+                  Save {formatMoney(saveAmount)}
                 </Text>
               </View>
             )}
           </View>
 
-          {/* DELIVERY */}
+          {/* DYNAMIC DELIVERY */}
           <View style={styles.deliveryCard}>
             <View style={styles.deliveryIcon}>
               <Ionicons
                 name="flash"
-                size={19}
-                color={PREMIUM.primary}
+                size={21}
+                color={C.primary}
               />
             </View>
 
             <View style={styles.deliveryContent}>
               <Text style={styles.deliveryTitle}>
-                Delivery in {product.delivery}
+                {deliveryTime
+                  ? `Delivery in ${deliveryTime}`
+                  : "Delivery time unavailable"}
               </Text>
+
               <Text style={styles.deliverySubtitle}>
-                Fast delivery to your location
+                Based on your selected location
               </Text>
             </View>
 
             <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={PREMIUM.primary}
+              name="time-outline"
+              size={20}
+              color={C.primary}
             />
           </View>
 
           {/* DESCRIPTION */}
-          {product.description ? (
-            <View style={styles.section}>
-              <View style={styles.sectionHeading}>
-                <View style={styles.sectionAccent} />
-                <Text style={styles.sectionTitle}>
-                  About this product
-                </Text>
-              </View>
+          {!!product.description && (
+            <View style={styles.descriptionSection}>
+              <Text style={styles.sectionTitle}>
+                About this product
+              </Text>
 
               <Text style={styles.description}>
                 {product.description}
               </Text>
             </View>
-          ) : null}
+          )}
 
-          {/* RELATED PRODUCTS */}
+          {/* PRODUCT INFORMATION */}
+          <View style={styles.informationSection}>
+            <Text style={styles.sectionTitle}>
+              Product Information
+            </Text>
+
+            {hasInformation ? (
+              <View style={styles.informationTable}>
+                <InformationRow
+                  label="Category"
+                  value={categoryName}
+                />
+
+                <InformationRow
+                  label="Weight"
+                  value={productWeight}
+                />
+
+                <InformationRow
+                  label="Brand"
+                  value={productBrand}
+                />
+
+                <InformationRow
+                  label="Unit"
+                  value={productUnit}
+                />
+
+                <InformationRow
+                  label="Rating"
+                  value={
+                    rating > 0
+                      ? `${rating.toFixed(1)} / 5`
+                      : null
+                  }
+                />
+
+                <InformationRow
+                  label="Shelf Life"
+                  value={productShelfLife}
+                  last
+                />
+              </View>
+            ) : (
+              <Text style={styles.noInfoText}>
+                Additional product information
+                is not available.
+              </Text>
+            )}
+          </View>
+
+          {/* QUALITY STRIP */}
+          <View style={styles.qualityStrip}>
+            <View style={styles.qualityItem}>
+              <Ionicons
+                name="leaf-outline"
+                size={21}
+                color={C.primary}
+              />
+
+              <Text style={styles.qualityText}>
+                Fresh
+              </Text>
+            </View>
+
+            <View style={styles.qualityDivider} />
+
+            <View style={styles.qualityItem}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={21}
+                color={C.primary}
+              />
+
+              <Text style={styles.qualityText}>
+                Quality
+              </Text>
+            </View>
+
+            <View style={styles.qualityDivider} />
+
+            <View style={styles.qualityItem}>
+              <Ionicons
+                name="flash-outline"
+                size={21}
+                color={C.primary}
+              />
+
+              <Text style={styles.qualityText}>
+                Fast
+              </Text>
+            </View>
+          </View>
+
+          {/* YOU MAY ALSO LIKE */}
           {related.length > 0 && (
             <View style={styles.relatedSection}>
-              <View style={styles.sectionHeading}>
-                <View style={styles.sectionAccent} />
-                <View>
-                  <Text style={styles.relatedTitle}>
+              <View style={styles.relatedHeading}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>
                     You May Also Like
                   </Text>
+
                   <Text style={styles.relatedSubtitle}>
                     More products for you
                   </Text>
                 </View>
+
+                <Pressable
+                  onPress={() => {
+                    const slug =
+                      product.categorySlug ||
+                      product.category?.slug;
+
+                    if (slug) {
+                      router.push(
+                        `/category/${slug}`
+                      );
+                    }
+                  }}
+                  disabled={
+                    !(
+                      product.categorySlug ||
+                      product.category?.slug
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.seeAll,
+                      !(
+                        product.categorySlug ||
+                        product.category?.slug
+                      ) && styles.seeAllDisabled,
+                    ]}
+                  >
+                    See All
+                  </Text>
+                </Pressable>
               </View>
 
               <ScrollView
                 horizontal
+                nestedScrollEnabled
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.relatedScroll}
+                contentContainerStyle={
+                  styles.relatedScroll
+                }
               >
-                {related.map((item) => {
-                  const relImg = item.image
-                    ? { uri: item.image }
-                    : null;
-
-                  return (
-                    <Pressable
-                      key={String(item.id)}
-                      style={styles.relatedCard}
-                      onPress={() =>
-                        router.push(`/product/${item.id}`)
-                      }
-                    >
-                      <View style={styles.relatedImageBox}>
-                        {relImg ? (
-                          <Image
-                            source={relImg}
-                            style={styles.relatedImage}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <Ionicons
-                            name="image-outline"
-                            size={24}
-                            color={PREMIUM.muted}
-                          />
-                        )}
-                      </View>
-
-                      <Text
-                        style={styles.relatedName}
-                        numberOfLines={2}
-                      >
-                        {item.name}
-                      </Text>
-
-                      <Text style={styles.relatedWeight}>
-                        {item.weight}
-                      </Text>
-
-                      <View style={styles.relatedBottom}>
-                        <Text style={styles.relatedPrice}>
-                          ₹{item.price}
-                        </Text>
-
-                        <Pressable
-                          style={styles.relatedAdd}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            addToCart(item);
-                          }}
-                        >
-                          <Ionicons
-                            name="add"
-                            size={19}
-                            color={PREMIUM.white}
-                          />
-                        </Pressable>
-                      </View>
-                    </Pressable>
-                  );
-                })}
+                {related.map((item) => (
+                  <RelatedProduct
+                    key={String(item.id)}
+                    item={item}
+                    cart={cart}
+                    imageRefs={relatedImageRefs}
+                    onOpen={(productId) =>
+                      router.push(
+                        `/product/${productId}`
+                      )
+                    }
+                    onAdd={(selected) =>
+                      handleAdd(selected, false)
+                    }
+                    onIncrease={(selected) =>
+                      handleIncrease(
+                        selected,
+                        false
+                      )
+                    }
+                    onDecrease={handleDecrease}
+                  />
+                ))}
               </ScrollView>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* FIXED BOTTOM CART BAR */}
+      {/* FIXED BOTTOM CART ACTION */}
       <View
         style={[
           styles.bottomBar,
-          { paddingBottom: Math.max(insets.bottom, 12) },
+          {
+            paddingBottom: Math.max(
+              insets.bottom,
+              12
+            ),
+          },
         ]}
       >
         {quantity === 0 ? (
           <Pressable
             style={styles.addButton}
-            onPress={() => addToCart(product)}
+            onPress={() =>
+              handleAdd(product, true)
+            }
           >
             <Ionicons
               name="bag-add-outline"
-              size={20}
-              color={PREMIUM.white}
+              size={21}
+              color={C.white}
             />
+
             <Text style={styles.addButtonText}>
               Add to Cart
             </Text>
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color={PREMIUM.white}
-            />
           </Pressable>
         ) : (
-          <View style={styles.cartActionRow}>
+          <View style={styles.bottomActionRow}>
             <View style={styles.quantityContainer}>
               <Pressable
-                style={styles.quantityButton}
-                onPress={() => decrease(product.id)}
+                style={styles.mainQuantityButton}
+                onPress={() =>
+                  handleDecrease(product.id)
+                }
               >
                 <Ionicons
                   name="remove"
-                  size={19}
-                  color={PREMIUM.primary}
+                  size={22}
+                  color={C.primary}
                 />
               </Pressable>
 
-              <Text style={styles.quantityText}>
+              <Text style={styles.mainQuantityText}>
                 {quantity}
               </Text>
 
               <Pressable
-                style={styles.quantityButtonPlus}
-                onPress={() => increase(product.id)}
+                style={styles.mainQuantityButton}
+                onPress={() =>
+                  handleIncrease(product, true)
+                }
               >
                 <Ionicons
                   name="add"
-                  size={19}
-                  color={PREMIUM.white}
+                  size={22}
+                  color={C.primary}
                 />
               </Pressable>
             </View>
@@ -546,20 +1124,24 @@ export default function ProductDetails() {
               <Ionicons
                 name="bag-outline"
                 size={19}
-                color={PREMIUM.white}
+                color={C.white}
               />
+
               <Text style={styles.viewCartText}>
                 View Cart
               </Text>
+
               <Ionicons
                 name="arrow-forward"
-                size={17}
-                color={PREMIUM.white}
+                size={18}
+                color={C.white}
               />
             </Pressable>
           </View>
         )}
       </View>
+
+      {renderFlyingImage()}
     </View>
   );
 }
@@ -567,132 +1149,66 @@ export default function ProductDetails() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: PREMIUM.background,
+    backgroundColor: C.background,
   },
 
-  // FIXED HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
-    elevation: 4,
-    zIndex: 10,
-  },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
-  headerRow: {
+  // WHITE HEADER
+  header: {
+    backgroundColor: C.white,
+    paddingHorizontal: 15,
+    paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    zIndex: 5,
   },
 
   headerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    width: 43,
+    height: 43,
+    borderRadius: 12,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  headerTitleBox: {
+  headerCenter: {
     flex: 1,
     alignItems: "center",
     paddingHorizontal: 8,
   },
 
   headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 18,
+    fontWeight: "900",
+    color: C.navy,
   },
 
   headerSubtitle: {
-    color: "#FFE0EB",
     fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  headerInfoIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
+    color: C.muted,
+    marginTop: 3,
   },
 
   cartBadge: {
     position: "absolute",
     top: -5,
     right: -5,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 4,
+    minWidth: 19,
+    height: 19,
     borderRadius: 10,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.primary,
     borderWidth: 2,
-    borderColor: PREMIUM.primary,
+    borderColor: C.white,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 3,
   },
 
   cartBadgeText: {
-    color: PREMIUM.primary,
     fontSize: 9,
+    color: C.white,
     fontWeight: "900",
   },
 
@@ -700,42 +1216,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  content: {
-    paddingBottom: 25,
+  scrollContent: {
+    paddingTop: 10,
   },
 
-  // PRODUCT IMAGE
+  // FULL IMAGE
   imageSection: {
-    marginHorizontal: 16,
-    marginTop: 17,
-    height: 280,
-    backgroundColor: PREMIUM.white,
-    borderRadius: 26,
+    height: Math.min(
+      SCREEN_WIDTH * 0.85,
+      350
+    ),
+    marginHorizontal: 14,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+    borderColor: C.border,
+    borderRadius: 12,
     position: "relative",
-  },
-
-  imageDecor: {
-    position: "absolute",
-    width: 255,
-    height: 255,
-    borderRadius: 128,
-    backgroundColor: PREMIUM.pinkSoft,
-    opacity: 0.7,
-  },
-
-  imageBox: {
-    width: 232,
-    height: 232,
-    borderRadius: 116,
-    backgroundColor: PREMIUM.imageBg,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
   },
 
   productImage: {
@@ -743,282 +1242,298 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
-  discountBadge: {
-    position: "absolute",
-    top: 14,
-    left: 14,
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 22,
-    flexDirection: "row",
+  imageFallback: {
+    flex: 1,
     alignItems: "center",
-    gap: 5,
+    justifyContent: "center",
   },
 
-  discountText: {
-    color: PREMIUM.white,
+  discountBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    backgroundColor: C.primary,
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+
+  discountBadgeText: {
+    color: C.white,
     fontSize: 10,
     fontWeight: "900",
   },
 
-  // PRODUCT INFO
-  infoContainer: {
-    paddingHorizontal: 16,
+  productContent: {
+    paddingHorizontal: 15,
     paddingTop: 18,
   },
 
-  categoryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.pinkSoft,
-    gap: 5,
-    marginBottom: 10,
-  },
-
-  categoryText: {
-    color: PREMIUM.primary,
+  categoryLabel: {
+    color: C.primary,
     fontSize: 10,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 7,
   },
 
   productName: {
-    color: PREMIUM.navy,
-    fontSize: 23,
-    lineHeight: 29,
+    fontSize: 25,
+    lineHeight: 31,
     fontWeight: "900",
+    color: C.navy,
     letterSpacing: -0.5,
   },
 
   metaRow: {
-    marginTop: 12,
+    marginTop: 9,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
   },
 
-  weightBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: PREMIUM.white,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    gap: 6,
-  },
-
-  weight: {
-    color: PREMIUM.gray,
-    fontSize: 12,
+  weightText: {
+    color: C.gray,
+    fontSize: 13,
     fontWeight: "600",
   },
 
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: PREMIUM.white,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    borderRadius: 18,
+    gap: 5,
   },
 
-  ratingText: {
-    color: PREMIUM.navy,
-    fontSize: 12,
+  ratingValue: {
+    color: C.navy,
+    fontSize: 13,
     fontWeight: "800",
-    marginLeft: 5,
   },
 
-  reviewText: {
-    color: PREMIUM.muted,
-    fontSize: 10,
-    marginLeft: 4,
-  },
-
-  // PRICE CARD
-  priceCard: {
-    backgroundColor: PREMIUM.white,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    borderRadius: 20,
-    marginTop: 16,
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 8,
+  reviewCount: {
+    color: C.muted,
+    fontSize: 11,
   },
 
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
+    marginTop: 17,
+    gap: 10,
   },
 
   price: {
-    color: PREMIUM.primary,
-    fontSize: 25,
+    fontSize: 28,
     fontWeight: "900",
+    color: C.primary,
   },
 
   mrp: {
-    color: PREMIUM.muted,
-    fontSize: 12,
-    marginLeft: 9,
+    color: C.muted,
+    fontSize: 15,
     textDecorationLine: "line-through",
   },
 
-  saveBadge: {
-    backgroundColor: PREMIUM.pinkSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+  savingLabel: {
+    backgroundColor: C.soft,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 5,
   },
 
-  saveBadgeText: {
-    color: PREMIUM.primary,
-    fontSize: 10,
+  savingText: {
+    color: C.primary,
+    fontSize: 11,
     fontWeight: "800",
   },
 
-  // DELIVERY CARD
+  // DELIVERY
   deliveryCard: {
-    marginTop: 12,
-    minHeight: 70,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.pinkSoft,
+    marginTop: 20,
+    backgroundColor: C.soft,
     borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
+    borderColor: "#F8DCE7",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
   },
 
   deliveryIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: PREMIUM.white,
+    width: 43,
+    height: 43,
+    borderRadius: 9,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
   },
 
   deliveryContent: {
     flex: 1,
-    marginLeft: 11,
+    marginLeft: 12,
   },
 
   deliveryTitle: {
-    color: PREMIUM.navy,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "900",
+    color: C.navy,
   },
 
   deliverySubtitle: {
-    color: PREMIUM.muted,
     fontSize: 10,
-    marginTop: 4,
+    color: C.muted,
+    marginTop: 5,
   },
 
   // DESCRIPTION
-  section: {
-    marginTop: 17,
-    backgroundColor: PREMIUM.white,
-    borderRadius: 20,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-  },
-
-  sectionHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-
-  sectionAccent: {
-    width: 3,
-    height: 23,
-    borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
-    marginRight: 10,
+  descriptionSection: {
+    marginTop: 24,
   },
 
   sectionTitle: {
-    color: PREMIUM.navy,
-    fontSize: 15,
-    fontWeight: "800",
+    fontSize: 18,
+    fontWeight: "900",
+    color: C.navy,
   },
 
   description: {
-    color: PREMIUM.gray,
+    marginTop: 10,
+    color: C.gray,
+    fontSize: 13,
+    lineHeight: 21,
+  },
+
+  // PRODUCT INFORMATION
+  informationSection: {
+    marginTop: 24,
+    padding: 14,
+    borderRadius: 11,
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+
+  informationTable: {
+    marginTop: 13,
+  },
+
+  informationRow: {
+    minHeight: 49,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0E9ED",
+    paddingVertical: 10,
+    gap: 12,
+  },
+
+  informationRowLast: {
+    borderBottomWidth: 0,
+  },
+
+  informationLabel: {
+    flex: 1,
+    color: C.muted,
     fontSize: 12,
-    lineHeight: 20,
+  },
+
+  informationValue: {
+    flex: 1,
+    textAlign: "right",
+    color: C.navy,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  noInfoText: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 12,
+  },
+
+  // QUALITY STRIP
+  qualityStrip: {
+    marginTop: 12,
+    minHeight: 70,
+    backgroundColor: C.soft,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingHorizontal: 6,
+  },
+
+  qualityItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+
+  qualityText: {
+    color: C.navy,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  qualityDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#F0D5DF",
   },
 
   // RELATED PRODUCTS
   relatedSection: {
-    marginTop: 24,
-    marginBottom: 12,
+    marginTop: 26,
   },
 
-  relatedTitle: {
-    color: PREMIUM.navy,
-    fontSize: 17,
-    fontWeight: "900",
+  relatedHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
   },
 
   relatedSubtitle: {
-    color: PREMIUM.muted,
-    fontSize: 10,
-    marginTop: 4,
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 5,
+  },
+
+  seeAll: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  seeAllDisabled: {
+    opacity: 0.35,
   },
 
   relatedScroll: {
-    paddingTop: 5,
-    paddingRight: 8,
-    paddingBottom: 5,
+    paddingRight: 15,
+    paddingBottom: 7,
+    gap: 10,
   },
 
   relatedCard: {
-    width: 148,
-    marginRight: 11,
+    width: 150,
     padding: 9,
-    borderRadius: 19,
-    backgroundColor: PREMIUM.white,
+    borderRadius: 10,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
-    shadowColor: "#7A2949",
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    elevation: 1,
+    borderColor: C.border,
   },
 
   relatedImageBox: {
+    height: 124,
     width: "100%",
-    height: 108,
-    borderRadius: 15,
-    backgroundColor: PREMIUM.imageBg,
+    backgroundColor: C.white,
+    borderRadius: 7,
+    position: "relative",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -1029,173 +1544,229 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
+  relatedDiscount: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    backgroundColor: C.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+
+  relatedDiscountText: {
+    color: C.white,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
   relatedName: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 12,
-    fontWeight: "800",
-    marginTop: 9,
-    minHeight: 32,
     lineHeight: 16,
+    fontWeight: "800",
+    marginTop: 8,
+    minHeight: 32,
   },
 
   relatedWeight: {
-    color: PREMIUM.muted,
+    color: C.muted,
     fontSize: 10,
     marginTop: 4,
   },
 
-  relatedBottom: {
-    marginTop: 10,
+  relatedPriceRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 5,
+    marginTop: 9,
+    minHeight: 21,
   },
 
   relatedPrice: {
-    color: PREMIUM.primary,
-    fontSize: 14,
+    color: C.navy,
+    fontSize: 13,
     fontWeight: "900",
   },
 
+  relatedMrp: {
+    color: C.muted,
+    fontSize: 10,
+    textDecorationLine: "line-through",
+  },
+
   relatedAdd: {
-    width: 35,
-    height: 35,
-    borderRadius: 18,
-    backgroundColor: PREMIUM.primary,
+    height: 33,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.primary,
+    backgroundColor: C.soft,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginTop: 9,
+  },
+
+  relatedAddText: {
+    color: C.primary,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  relatedQuantity: {
+    height: 33,
+    marginTop: 9,
+    backgroundColor: C.primary,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    overflow: "hidden",
+  },
+
+  relatedQtyButton: {
+    width: 36,
+    height: 33,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // FIXED BOTTOM CART BAR
+  relatedQtyText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  // FIXED BOTTOM
   bottomBar: {
-    backgroundColor: PREMIUM.white,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    backgroundColor: C.white,
     borderTopWidth: 1,
-    borderTopColor: PREMIUM.border,
-    shadowColor: PREMIUM.navy,
-    shadowOffset: {
-      width: 0,
-      height: -3,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 9,
+    borderTopColor: C.border,
+    paddingHorizontal: 15,
+    paddingTop: 11,
     elevation: 9,
   },
 
   addButton: {
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: PREMIUM.primary,
+    height: 52,
+    backgroundColor: C.primary,
+    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 9,
+    gap: 10,
   },
 
   addButtonText: {
-    color: PREMIUM.white,
-    fontSize: 14,
+    color: C.white,
+    fontSize: 15,
     fontWeight: "900",
   },
 
-  cartActionRow: {
+  bottomActionRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
 
   quantityContainer: {
-    width: 120,
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: PREMIUM.pinkSoft,
+    width: 130,
+    height: 52,
+    backgroundColor: C.soft,
     borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
+    borderColor: C.border,
+    borderRadius: 9,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 5,
   },
 
-  quantityButton: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.white,
+  mainQuantityButton: {
+    width: 35,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  quantityButtonPlus: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: PREMIUM.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  quantityText: {
-    minWidth: 20,
-    textAlign: "center",
-    color: PREMIUM.navy,
-    fontSize: 15,
+  mainQuantityText: {
+    color: C.navy,
+    fontSize: 16,
     fontWeight: "900",
   },
 
   viewCartButton: {
     flex: 1,
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: PREMIUM.primary,
+    height: 52,
+    backgroundColor: C.primary,
+    borderRadius: 9,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
+    gap: 8,
   },
 
   viewCartText: {
-    color: PREMIUM.white,
+    color: C.white,
     fontSize: 13,
     fontWeight: "900",
   },
 
+  // FLYING IMAGE
+  flyingImageBox: {
+    position: "absolute",
+    width: 54,
+    height: 54,
+    borderRadius: 9,
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    zIndex: 9999,
+    elevation: 30,
+    pointerEvents: "none",
+  },
+
+  flyingImage: {
+    width: "100%",
+    height: "100%",
+  },
+
   // LOADING / ERROR
-  loadingContainer: {
+  centerState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: PREMIUM.background,
+    paddingHorizontal: 24,
   },
 
-  errorIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
+  stateText: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 12,
   },
 
-  errorText: {
-    color: PREMIUM.navy,
+  stateTitle: {
+    color: C.navy,
     fontSize: 17,
-    fontWeight: "800",
-    marginBottom: 18,
+    fontWeight: "900",
+    marginTop: 12,
   },
 
-  backButton: {
-    paddingHorizontal: 27,
-    paddingVertical: 13,
-    borderRadius: 25,
-    backgroundColor: PREMIUM.primary,
+  stateButton: {
+    marginTop: 18,
+    backgroundColor: C.primary,
+    borderRadius: 8,
+    paddingHorizontal: 25,
+    paddingVertical: 12,
   },
 
-  backButtonText: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
+  stateButtonText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: "900",
   },
 });

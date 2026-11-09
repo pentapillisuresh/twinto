@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import React, { useState } from "react";
 
 import {
   Alert,
@@ -10,6 +10,7 @@ import {
   View,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,8 +32,93 @@ const PREMIUM = {
   muted: "#858B95",
   gray: "#68717F",
   danger: "#C93652",
-  gold: "#FFE19A",
+  green: "#16844A",
 };
+
+function AccountItem({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  danger = false,
+  last = false,
+  disabled = false,
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.72}
+      style={[
+        styles.accountItem,
+        disabled && styles.disabledItem,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <View
+        style={[
+          styles.itemIcon,
+          danger && styles.dangerIcon,
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={
+            danger ? PREMIUM.danger : PREMIUM.primary
+          }
+        />
+      </View>
+
+      <View
+        style={[
+          styles.itemBody,
+          last && styles.lastItem,
+        ]}
+      >
+        <View style={styles.itemContent}>
+          <Text
+            style={[
+              styles.itemTitle,
+              danger && styles.dangerText,
+            ]}
+          >
+            {title}
+          </Text>
+
+          {!!subtitle && (
+            <Text style={styles.itemSubtitle}>
+              {subtitle}
+            </Text>
+          )}
+        </View>
+
+        {!danger && (
+          <Ionicons
+            name="chevron-forward"
+            size={17}
+            color="#B0AAB1"
+          />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function SectionHeading({ title, icon }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <Ionicons
+        name={icon}
+        size={15}
+        color={PREMIUM.primary}
+      />
+
+      <Text style={styles.sectionTitle}>
+        {title}
+      </Text>
+    </View>
+  );
+}
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -40,9 +126,10 @@ export default function AccountScreen() {
 
   const { user, logout } = useAuth();
 
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [loggingOut, setLoggingOut] =
+    useState(false);
 
-  // ORIGINAL LOGOUT LOGIC - UNCHANGED
+  // EXISTING LOGOUT LOGIC PRESERVED
   async function handleLogout() {
     Alert.alert(
       "Logout",
@@ -71,228 +158,167 @@ export default function AccountScreen() {
     );
   }
 
-  // ORIGINAL ACCOUNT ITEM FUNCTIONALITY
-  function AccountItem({
-    icon,
-    title,
-    subtitle,
-    onPress,
-    danger = false,
-  }) {
-    return (
-      <TouchableOpacity
-        activeOpacity={0.8}
-        style={styles.accountItem}
-        onPress={onPress}
-      >
-        <View
-          style={[
-            styles.itemIcon,
-            danger && styles.dangerIcon,
-          ]}
-        >
-          <Ionicons
-            name={icon}
-            size={20}
-            color={
-              danger
-                ? COLORS.danger
-                : PREMIUM.primary
-            }
-          />
-        </View>
-
-        <View style={styles.itemContent}>
-          <Text
-            style={[
-              styles.itemTitle,
-              danger && {
-                color: COLORS.danger,
-              },
-            ]}
-          >
-            {title}
-          </Text>
-
-          {subtitle ? (
-            <Text style={styles.itemSubtitle}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-
-        {!danger && (
-          <View style={styles.itemArrow}>
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color={PREMIUM.primary}
-            />
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  }
-
-  // SAME TOP SPACING AS YOUR CART / ORDERS PAGE
   const topInset =
-    Platform.OS === "ios"
-      ? insets.top
-      : Platform.Version >= 35
+    Platform.OS === "ios" ||
+    (Platform.OS === "android" &&
+      Platform.Version >= 35)
       ? insets.top
       : 0;
+
+  const displayName =
+    user?.name || "Welcome to TWINTO";
+
+  const displayMobile =
+    user?.mobile || "Mobile number unavailable";
+
+  const initial =
+    user?.name?.trim()?.charAt(0)?.toUpperCase() ||
+    "T";
 
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={PREMIUM.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
         }
       />
 
-      {/* FIXED FULL-WIDTH PREMIUM HEADER */}
+      {/* CLEAN FIXED WHITE HEADER */}
       <View
         style={[
-          styles.headerBackground,
-          {
-            paddingTop: topInset + 18,
-          },
+          styles.header,
+          { paddingTop: topInset + 11 },
         ]}
       >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
-
-        <View style={styles.headerRow}>
-          <View style={styles.headerSide} />
-
-          <View style={styles.headerTitleBox}>
-            <Text style={styles.headerTitle}>
-              My Account
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Manage your TWINTO account
-            </Text>
-          </View>
-
-          <View style={styles.headerSide} />
+        <View style={styles.headerIcon}>
+          <Ionicons
+            name="person-outline"
+            size={21}
+            color={PREMIUM.primary}
+          />
         </View>
 
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="person-outline"
-              size={20}
-              color={PREMIUM.gold}
-            />
-          </View>
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>
+            My Account
+          </Text>
 
-          <View style={styles.headerInfoContent}>
-            <Text
-              style={styles.headerInfoTitle}
-              numberOfLines={1}
-            >
-              {user?.name || "Welcome to TWINTO"}
-            </Text>
-
-            <Text
-              style={styles.headerInfoSubtitle}
-              numberOfLines={1}
-            >
-              Your personal shopping space
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={17}
-              color={PREMIUM.white}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* ONLY CONTENT SCROLLS */}
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      >
-        {/* PROFILE */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.name?.charAt(0)?.toUpperCase() || "A"}
-            </Text>
-          </View>
-
-          <View style={styles.profileInfo}>
-            <Text
-              style={styles.name}
-              numberOfLines={1}
-            >
-              {user?.name || "ANIL"}
-            </Text>
-
-            <Text
-              style={styles.mobile}
-              numberOfLines={1}
-            >
-              {user?.mobile || "+91 98490 12345"}
-            </Text>
-
-            <View style={styles.verified}>
-              <Ionicons
-                name="checkmark-circle"
-                size={14}
-                color={COLORS.primary}
-              />
-
-              <Text style={styles.verifiedText}>
-                Verified account
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.editButton}
-            onPress={() =>
-              router.push("/account/profile")
-            }
-          >
-            <Ionicons
-              name="create-outline"
-              size={19}
-              color={COLORS.primary}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* ORDERS */}
-        <View style={styles.sectionHeading}>
-          <View style={styles.sectionAccent} />
-
-          <Text style={styles.sectionTitle}>
-            ORDERS
+          <Text style={styles.headerSubtitle}>
+            Manage your profile and preferences
           </Text>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={styles.headerRight}>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={20}
+            color={PREMIUM.primary}
+          />
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom:
+              Math.max(insets.bottom, 12) + 26,
+          },
+        ]}
+      >
+        {/* COMPACT PREMIUM PROFILE */}
+        <View style={styles.profileCard}>
+          <View style={styles.profileTop}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {initial}
+              </Text>
+            </View>
+
+            <View style={styles.profileInfo}>
+              <Text
+                style={styles.name}
+                numberOfLines={1}
+              >
+                {displayName}
+              </Text>
+
+              <Text
+                style={styles.mobile}
+                numberOfLines={1}
+              >
+                {displayMobile}
+              </Text>
+
+              <View style={styles.verified}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color={PREMIUM.green}
+                />
+
+                <Text style={styles.verifiedText}>
+                  Your TWINTO account
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.editButton}
+              onPress={() =>
+                router.push("/account/profile")
+              }
+            >
+              <Ionicons
+                name="create-outline"
+                size={19}
+                color={PREMIUM.primary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.profileBottom}>
+            <View style={styles.profileBottomLeft}>
+              <Ionicons
+                name="bag-handle-outline"
+                size={15}
+                color={PREMIUM.primary}
+              />
+
+              <Text style={styles.profileBottomText}>
+                Fresh shopping starts here
+              </Text>
+            </View>
+
+            <Ionicons
+              name="sparkles-outline"
+              size={16}
+              color={PREMIUM.primary}
+            />
+          </View>
+        </View>
+
+        {/* ORDERS */}
+        <SectionHeading
+          title="SHOPPING"
+          icon="bag-handle-outline"
+        />
+
+        <View style={styles.settingsGroup}>
           <AccountItem
             icon="receipt-outline"
             title="My Orders"
-            subtitle="View your recent orders"
+            subtitle="View orders and track deliveries"
             onPress={() =>
               router.push("/orders")
             }
           />
-
-          <View style={styles.separator} />
 
           <AccountItem
             icon="heart-outline"
@@ -304,43 +330,39 @@ export default function AccountScreen() {
                 "Saved items will be available soon."
               )
             }
+            last
           />
         </View>
 
         {/* DELIVERY */}
-        <View style={styles.sectionHeading}>
-          <View style={styles.sectionAccent} />
+        <SectionHeading
+          title="DELIVERY"
+          icon="location-outline"
+        />
 
-          <Text style={styles.sectionTitle}>
-            DELIVERY
-          </Text>
-        </View>
-
-        <View style={styles.sectionCard}>
+        <View style={styles.settingsGroup}>
           <AccountItem
             icon="location-outline"
             title="My Addresses"
-            subtitle="Manage delivery addresses"
+            subtitle="Manage your delivery locations"
             onPress={() =>
               router.push("/checkout/address")
             }
+            last
           />
         </View>
 
-        {/* SUPPORT */}
-        <View style={styles.sectionHeading}>
-          <View style={styles.sectionAccent} />
+        {/* HELP */}
+        <SectionHeading
+          title="HELP & INFORMATION"
+          icon="help-circle-outline"
+        />
 
-          <Text style={styles.sectionTitle}>
-            SUPPORT
-          </Text>
-        </View>
-
-        <View style={styles.sectionCard}>
+        <View style={styles.settingsGroup}>
           <AccountItem
-            icon="help-circle-outline"
+            icon="headset-outline"
             title="Help & Support"
-            subtitle="Get help with your orders"
+            subtitle="We're here to help you"
             onPress={() =>
               Alert.alert(
                 "Help & Support",
@@ -349,11 +371,10 @@ export default function AccountScreen() {
             }
           />
 
-          <View style={styles.separator} />
-
           <AccountItem
             icon="document-text-outline"
             title="Terms & Conditions"
+            subtitle="Read our terms of service"
             onPress={() =>
               Alert.alert(
                 "Terms & Conditions",
@@ -362,30 +383,27 @@ export default function AccountScreen() {
             }
           />
 
-          <View style={styles.separator} />
-
           <AccountItem
             icon="shield-checkmark-outline"
             title="Privacy Policy"
+            subtitle="How your information is handled"
             onPress={() =>
               Alert.alert(
                 "Privacy Policy",
                 "Privacy policy will be connected to the backend later."
               )
             }
+            last
           />
         </View>
 
-        {/* ACCOUNT */}
-        <View style={styles.sectionHeading}>
-          <View style={styles.sectionAccent} />
+        {/* ACCOUNT ACTION */}
+        <SectionHeading
+          title="ACCOUNT"
+          icon="settings-outline"
+        />
 
-          <Text style={styles.sectionTitle}>
-            ACCOUNT
-          </Text>
-        </View>
-
-        <View style={styles.sectionCard}>
+        <View style={styles.settingsGroup}>
           <AccountItem
             icon="log-out-outline"
             title={
@@ -393,21 +411,32 @@ export default function AccountScreen() {
                 ? "Logging out..."
                 : "Logout"
             }
+            subtitle="Sign out of your TWINTO account"
             danger
-            onPress={
-              loggingOut
-                ? undefined
-                : handleLogout
-            }
+            disabled={loggingOut}
+            onPress={handleLogout}
+            last
           />
         </View>
+
+        {loggingOut && (
+          <View style={styles.logoutLoading}>
+            <ActivityIndicator
+              color={PREMIUM.primary}
+              size="small"
+            />
+            <Text style={styles.logoutLoadingText}>
+              Signing out...
+            </Text>
+          </View>
+        )}
 
         {/* FOOTER */}
         <View style={styles.footer}>
           <View style={styles.footerLogo}>
             <Ionicons
               name="bag-handle"
-              size={16}
+              size={18}
               color={PREMIUM.primary}
             />
 
@@ -417,7 +446,7 @@ export default function AccountScreen() {
           </View>
 
           <Text style={styles.version}>
-            TWINTO v1.0.0
+            Version 1.0.0
           </Text>
 
           <Text style={styles.tagline}>
@@ -430,7 +459,6 @@ export default function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  // PAGE
   container: {
     flex: 1,
     backgroundColor: PREMIUM.background,
@@ -442,154 +470,80 @@ const styles = StyleSheet.create({
 
   content: {
     paddingHorizontal: 15,
-    paddingTop: 18,
-    paddingBottom: 35,
+    paddingTop: 17,
   },
 
-  // FIXED FULL-WIDTH HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 22,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
-  },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
-  headerRow: {
+  // WHITE HEADER
+  header: {
+    backgroundColor: PREMIUM.white,
+    paddingHorizontal: 16,
+    paddingBottom: 13,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: PREMIUM.border,
   },
 
-  headerSide: {
-    width: 42,
-  },
-
-  headerTitleBox: {
-    flex: 1,
+  headerIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
+    justifyContent: "center",
+  },
+
+  headerText: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 12,
   },
 
   headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
+    color: PREMIUM.navy,
+    fontSize: 19,
+    fontWeight: "900",
+    letterSpacing: -0.4,
   },
 
   headerSubtitle: {
-    color: "#FFE0EB",
+    color: PREMIUM.muted,
     fontSize: 10,
     fontWeight: "500",
     marginTop: 3,
   },
 
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 17,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  headerInfoIcon: {
-    width: 39,
-    height: 39,
+  headerRight: {
+    width: 40,
+    height: 40,
     borderRadius: 13,
-    backgroundColor: "rgba(255,255,255,0.13)",
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 11,
   },
 
-  headerInfoContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfoBadge: {
-    width: 29,
-    height: 29,
-    borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-
-  // PROFILE CARD
+  // PROFILE
   profileCard: {
     backgroundColor: PREMIUM.white,
-    borderRadius: 21,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: PREMIUM.border,
-    shadowColor: PREMIUM.navy,
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 11,
-    elevation: 2,
+    overflow: "hidden",
+  },
+
+  profileTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
   },
 
   avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 19,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     backgroundColor: PREMIUM.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: PREMIUM.primary,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 2,
   },
 
   avatarText: {
@@ -605,141 +559,163 @@ const styles = StyleSheet.create({
   },
 
   name: {
+    color: PREMIUM.navy,
     fontSize: 16,
     fontWeight: "900",
-    color: PREMIUM.navy,
   },
 
   mobile: {
-    marginTop: 5,
-    fontSize: 11,
     color: PREMIUM.gray,
+    fontSize: 11,
+    marginTop: 5,
   },
 
   verified: {
-    marginTop: 8,
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 9,
-    backgroundColor: PREMIUM.pinkSoft,
+    gap: 5,
+    marginTop: 8,
   },
 
   verifiedText: {
-    marginLeft: 5,
+    color: PREMIUM.green,
     fontSize: 10,
-    fontWeight: "800",
-    color: PREMIUM.primary,
+    fontWeight: "700",
   },
 
   editButton: {
-    width: 39,
-    height: 39,
-    borderRadius: 13,
+    width: 37,
+    height: 37,
+    borderRadius: 12,
     backgroundColor: PREMIUM.pinkSoft,
-    borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
+    marginLeft: 7,
   },
 
-  // SECTION HEADING
-  sectionHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 25,
-    marginBottom: 10,
-    marginLeft: 4,
-  },
-
-  sectionAccent: {
-    width: 3,
-    height: 17,
-    borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
-    marginRight: 9,
-  },
-
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.1,
-    color: PREMIUM.navy,
-  },
-
-  // ACCOUNT SECTION CARDS
-  sectionCard: {
-    backgroundColor: PREMIUM.white,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    overflow: "hidden",
-    shadowColor: PREMIUM.navy,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.035,
-    shadowRadius: 10,
-    elevation: 1,
-  },
-
-  accountItem: {
-    minHeight: 72,
+  profileBottom: {
+    minHeight: 39,
+    backgroundColor: "#FFF5F8",
+    borderTopWidth: 1,
+    borderTopColor: "#F7E7ED",
     paddingHorizontal: 15,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  profileBottomLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  profileBottomText: {
+    color: PREMIUM.primary,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  // SECTION HEADINGS
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 23,
+    marginBottom: 10,
+    paddingHorizontal: 3,
+  },
+
+  sectionTitle: {
+    color: PREMIUM.navy,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+  },
+
+  // SETTINGS
+  settingsGroup: {
+    backgroundColor: PREMIUM.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: PREMIUM.border,
+    overflow: "hidden",
+  },
+
+  accountItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 68,
+    paddingLeft: 14,
+  },
+
+  disabledItem: {
+    opacity: 0.55,
   },
 
   itemIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: PREMIUM.pinkSoft,
-    borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
     alignItems: "center",
     justifyContent: "center",
   },
 
   dangerIcon: {
-    backgroundColor: "#FDECEC",
-    borderColor: "#F8D8DF",
+    backgroundColor: "#FFF0F1",
+  },
+
+  itemBody: {
+    flex: 1,
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3EDF0",
+    marginLeft: 12,
+    paddingRight: 15,
+  },
+
+  lastItem: {
+    borderBottomWidth: 0,
   },
 
   itemContent: {
     flex: 1,
-    marginLeft: 12,
+    paddingVertical: 10,
   },
 
   itemTitle: {
+    color: PREMIUM.navy,
     fontSize: 13,
     fontWeight: "800",
-    color: PREMIUM.navy,
+  },
+
+  dangerText: {
+    color: PREMIUM.danger,
   },
 
   itemSubtitle: {
-    marginTop: 4,
-    fontSize: 10,
     color: PREMIUM.muted,
+    fontSize: 10,
+    marginTop: 4,
+    lineHeight: 15,
   },
 
-  itemArrow: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
-    backgroundColor: PREMIUM.pinkSoft,
+  // LOGOUT
+  logoutLoading: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 9,
+    marginTop: 16,
   },
 
-  separator: {
-    height: 1,
-    backgroundColor: PREMIUM.border,
-    marginLeft: 71,
+  logoutLoadingText: {
+    color: PREMIUM.muted,
+    fontSize: 11,
   },
 
   // FOOTER
@@ -751,28 +727,27 @@ const styles = StyleSheet.create({
   footerLogo: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 7,
     marginBottom: 9,
   },
 
   footerBrand: {
     color: PREMIUM.primary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "900",
-    letterSpacing: 1.5,
+    letterSpacing: 1.6,
   },
 
   version: {
-    textAlign: "center",
-    fontSize: 11,
     color: PREMIUM.muted,
+    fontSize: 10,
     fontWeight: "700",
   },
 
   tagline: {
+    color: PREMIUM.muted,
+    fontSize: 10,
     marginTop: 6,
     textAlign: "center",
-    fontSize: 10,
-    color: PREMIUM.muted,
   },
 });

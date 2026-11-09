@@ -5,6 +5,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import {
 } from "../services/api";
 
 import { getMe } from "../services/authService";
+import { getLocation } from "../services/locationService";
 
 // ==========================================
 // STORAGE KEYS
@@ -411,13 +413,33 @@ export function LocationProvider({ children }) {
     return selectedLocation;
   }
 
+  // Refresh admin-managed delivery settings without requiring location reselection.
+  // Preserve the last selected location if the network is temporarily unavailable.
+  const refreshLocation = useCallback(async () => {
+    if (!location?.id) return null;
+    try {
+      const fresh = await getLocation(location.id);
+      if (!fresh) {
+        console.log("[LOCATION] Selected location is no longer available");
+        return null;
+      }
+      setLocation(fresh);
+      await AsyncStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(fresh));
+      return fresh;
+    } catch (error) {
+      console.log("[LOCATION] Fee refresh failed:", error?.message);
+      return null;
+    }
+  }, [location?.id]);
+
   const value = useMemo(
     () => ({
       location,
       setLocation: updateLocation,
+      refreshLocation,
       locationLoaded,
     }),
-    [location, locationLoaded]
+    [location, locationLoaded, refreshLocation]
   );
 
   return (
@@ -450,7 +472,7 @@ export function CartProvider({ children }) {
   const [cartLoaded, setCartLoaded] = useState(false);
 
   // Read the currently selected location.
-  const { location, locationLoaded } = useLocation();
+  const { location, locationLoaded, refreshLocation } = useLocation();
 
   // ========================================
   // LOAD SAVED CART
@@ -665,7 +687,7 @@ export function CartProvider({ children }) {
   const freeDelivery =
     isFreeDeliveryEnabled &&
     itemCount > 0 &&
-    itemCount <= locationFees.freeDeliveryMaxItems;
+     itemCount >= locationFees.freeDeliveryMaxItems;
 
   const deliveryFee =
     itemCount === 0
@@ -703,6 +725,9 @@ export function CartProvider({ children }) {
     minimumOrder,
     location,
     locationFees,
+    refreshLocation,
+    freeDeliveryMaxItems: locationFees.freeDeliveryMaxItems,
+    freeDeliveryEnabled: isFreeDeliveryEnabled,
     locationLoaded,
     tip,
     setTip,

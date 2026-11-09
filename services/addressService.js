@@ -2,6 +2,35 @@
 import { apiRequest } from "./api";
 
 /* =========================================
+   COMMON HELPERS
+========================================= */
+
+function toBoolean(value) {
+  return (
+    value === true ||
+    value === 1 ||
+    value === "1" ||
+    value === "true"
+  );
+}
+
+function validId(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const id = Number(value);
+
+  return Number.isSafeInteger(id) && id > 0
+    ? id
+    : null;
+}
+
+/* =========================================
    RESPONSE NORMALIZATION
 ========================================= */
 
@@ -11,7 +40,8 @@ function normalizeLocation(location) {
   }
 
   return {
-    id: location.id,
+    id: validId(location.id),
+
     name: location.name || location.city || "",
     city: location.city || "",
     state: location.state || "",
@@ -21,24 +51,20 @@ function normalizeLocation(location) {
     minimumOrder: Number(location.minimumOrder ?? 5),
     deliveryCharge: Number(location.deliveryCharge ?? 30),
 
-    freeDeliveryEnabled:
-      location.freeDeliveryEnabled === true ||
-      location.freeDeliveryEnabled === 1 ||
-      location.freeDeliveryEnabled === "1",
+    freeDeliveryEnabled: toBoolean(
+      location.freeDeliveryEnabled
+    ),
 
     freeDeliveryMaxItems: Number(
       location.freeDeliveryMaxItems ?? 3
     ),
 
-    deliveryTime: location.deliveryTime || "30-45 minutes",
+    deliveryTime:
+      location.deliveryTime || "30-45 minutes",
 
-    isAvailable:
-      location.isAvailable === true ||
-      location.isAvailable === 1,
+    isAvailable: toBoolean(location.isAvailable),
 
-    isActive:
-      location.isActive === true ||
-      location.isActive === 1,
+    isActive: toBoolean(location.isActive),
   };
 }
 
@@ -63,7 +89,7 @@ function toUI(address) {
   ].filter(Boolean);
 
   return {
-    id: address.id,
+    id: validId(address.id),
     userId: address.userId,
 
     type: address.type || "HOME",
@@ -85,18 +111,94 @@ function toUI(address) {
     lat: address.lat ?? null,
     lng: address.lng ?? null,
 
-    isDefault: Boolean(address.isDefault),
-    isActive: address.isActive !== false,
+    isDefault: toBoolean(address.isDefault),
 
-    // Important: selected delivery location ID
+    isActive:
+      address.isActive === undefined ||
+      address.isActive === null
+        ? true
+        : toBoolean(address.isActive),
+
     locationId:
-      address.locationId != null
-        ? Number(address.locationId)
-        : null,
+      validId(address.locationId) ||
+      location?.id ||
+      null,
 
-    // Location-specific fee settings
     location,
   };
+}
+
+/* =========================================
+   CHECK ADDRESS DELIVERY AVAILABILITY
+========================================= */
+
+export function isAddressServiceable(
+  address,
+  selectedLocationId = null
+) {
+  if (!address?.id || !address.isActive) {
+    return false;
+  }
+
+  const addressLocationId = validId(
+    address.locationId ?? address.location?.id
+  );
+
+  if (!addressLocationId) {
+    return false;
+  }
+
+  if (
+    selectedLocationId !== null &&
+    selectedLocationId !== undefined
+  ) {
+    const selectedId = validId(selectedLocationId);
+
+    if (
+      !selectedId ||
+      selectedId !== addressLocationId
+    ) {
+      return false;
+    }
+  }
+
+  const location = address.location;
+
+  if (!location) {
+    return false;
+  }
+
+  if (validId(location.id) !== addressLocationId) {
+    return false;
+  }
+
+  return (
+    location.isActive === true &&
+    location.isAvailable === true
+  );
+}
+
+/* =========================================
+   FILTER ADDRESSES BY SELECTED LOCATION
+========================================= */
+
+export function filterAddressesByLocation(
+  addresses,
+  selectedLocationId
+) {
+  if (!Array.isArray(addresses)) {
+    return [];
+  }
+
+  const locationId = validId(selectedLocationId);
+
+  if (!locationId) {
+    return [];
+  }
+
+  return addresses.filter((address) =>
+    isAddressServiceable(address, locationId)
+  );
 }
 
 /* =========================================
@@ -104,7 +206,9 @@ function toUI(address) {
    GET /addresses
 ========================================= */
 
-export async function getAddresses() {
+export async function getAddresses(
+  selectedLocationId = null
+) {
   const data = await apiRequest("/addresses");
 
   const list = Array.isArray(data)
@@ -113,7 +217,55 @@ export async function getAddresses() {
       ? data.addresses
       : [];
 
-  return list.map(toUI).filter(Boolean);
+  const addresses = list
+    .map(toUI)
+    .filter((address) => address?.id);
+
+  if (
+    selectedLocationId === null ||
+    selectedLocationId === undefined
+  ) {
+    return addresses;
+  }
+
+  return filterAddressesByLocation(
+    addresses,
+    selectedLocationId
+  );
+}
+
+/* =========================================
+   GET SELECTED DELIVERY ADDRESS
+========================================= */
+
+export function getSelectedAddress(
+  addresses,
+  selectedAddressId,
+  selectedLocationId
+) {
+  const availableAddresses =
+    filterAddressesByLocation(
+      addresses,
+      selectedLocationId
+    );
+
+  const selectedId = validId(selectedAddressId);
+
+  if (selectedId) {
+    const selectedAddress = availableAddresses.find(
+      (address) => validId(address.id) === selectedId
+    );
+
+    return selectedAddress || null;
+  }
+
+  return (
+    availableAddresses.find(
+      (address) => address.isDefault
+    ) ||
+    availableAddresses[0] ||
+    null
+  );
 }
 
 /* =========================================
@@ -123,16 +275,27 @@ export async function getAddresses() {
 
 export async function createAddress(payload) {
   if (!payload || typeof payload !== "object") {
-    throw new Error("Address details are required.");
+    throw new Error(
+      "Address details are required."
+    );
   }
 
-  if (!payload.locationId) {
-    throw new Error("Please select a delivery location.");
+  const locationId = validId(payload.locationId);
+
+  if (!locationId) {
+    throw new Error(
+      "Please select a valid delivery location."
+    );
   }
+
+  const requestPayload = {
+    ...payload,
+    locationId,
+  };
 
   const data = await apiRequest("/addresses", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(requestPayload),
   });
 
   const address = data?.address || data;
@@ -154,18 +317,45 @@ export async function createAddress(payload) {
 ========================================= */
 
 export async function updateAddress(id, payload) {
-  if (!id) {
-    throw new Error("Valid address ID is required.");
+  const addressId = validId(id);
+
+  if (!addressId) {
+    throw new Error(
+      "Valid address ID is required."
+    );
   }
 
   if (!payload || typeof payload !== "object") {
-    throw new Error("Address details are required.");
+    throw new Error(
+      "Address details are required."
+    );
   }
 
-  const data = await apiRequest(`/addresses/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
+  const requestPayload = {
+    ...payload,
+  };
+
+  if (requestPayload.locationId !== undefined) {
+    const locationId = validId(
+      requestPayload.locationId
+    );
+
+    if (!locationId) {
+      throw new Error(
+        "Please select a valid delivery location."
+      );
+    }
+
+    requestPayload.locationId = locationId;
+  }
+
+  const data = await apiRequest(
+    `/addresses/${addressId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(requestPayload),
+    }
+  );
 
   const address = data?.address || data;
 
@@ -178,11 +368,15 @@ export async function updateAddress(id, payload) {
 ========================================= */
 
 export async function deleteAddress(id) {
-  if (!id) {
-    throw new Error("Valid address ID is required.");
+  const addressId = validId(id);
+
+  if (!addressId) {
+    throw new Error(
+      "Valid address ID is required."
+    );
   }
 
-  return apiRequest(`/addresses/${id}`, {
+  return apiRequest(`/addresses/${addressId}`, {
     method: "DELETE",
   });
 }

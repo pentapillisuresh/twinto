@@ -32,7 +32,7 @@ import { useAuth } from "../../context";
 
 // Assumes this file is in app/auth/ or a similar
 // two-level-deep folder, as in your existing imports.
-const LOGO = require("../../assets/images/logo1.png");
+const LOGO = require("../../assets/images/twintologo512.png");
 
 // ==========================================
 // PREMIUM COLORS

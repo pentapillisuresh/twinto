@@ -62,10 +62,12 @@ import { COLORS } from "../../constants";
 import { useCart } from "../../context";
 
 import { getAddresses } from "../../services/addressService";
+import { getCheckoutAddressId } from "../../services/checkoutAddressService";
 
 import { syncCartToBackend } from "../../services/cartService";
+import { validateCoupon } from "../../services/couponService";
 
-import { createOrder, retryCashfreePayment } from "../../services/orderService";
+import { createOrder } from "../../services/orderService";
 import { WebView } from "react-native-webview";
 
 import {
@@ -77,6 +79,7 @@ import {
 } from "../../services/paymentService";
 
 const PENDING_ORDER_KEY = "twinto_cashfree_pending_order_v1";
+const COUPON_STORAGE_KEY = "twinto_checkout_coupon";
 
 function money(value) {
 
@@ -197,12 +200,36 @@ export default function ReviewOrder() {
     total = 0,
 
     clear,
+    location,
 
   } = useCart();
+
+  const selectedLocationId =
+    location?.isActive !== false && location?.isAvailable !== false
+      ? Number(location?.id) || null
+      : null;
+
+  const addressIsAvailable = (candidate) => {
+    if (!selectedLocationId || !candidate?.id || !candidate?.locationId || !candidate?.location) return false;
+    const location = candidate.location;
+    if (location.isActive !== true || location.isAvailable !== true) return false;
+    if (Number(candidate.locationId) !== selectedLocationId) return false;
+    return true;
+  };
 
   const [address, setAddress] = useState(null);
 
   const [loadingAddress, setLoadingAddress] = useState(true);
+  const [coupon, setCoupon] = useState(null);
+  const [couponChecking, setCouponChecking] = useState(true);
+  const [couponError, setCouponError] = useState("");
+  const couponRef = useRef(null);
+  const couponCheckingRef = useRef(false);
+  const discount = Math.min(
+    Math.max(0, Number(itemTotal) || 0),
+    Math.max(0, Number(coupon?.discount) || 0)
+  );
+  const estimatedTotal = Math.max(0, (Number(total) || 0) - discount);
 
   const [placing, setPlacing] = useState(false);
 
@@ -336,6 +363,7 @@ export default function ReviewOrder() {
 
           await removePendingOrder();
 
+          await AsyncStorage.removeItem(COUPON_STORAGE_KEY).catch(() => {});
           clear();
 
           router.replace(`/order/${id}`);
@@ -353,6 +381,12 @@ export default function ReviewOrder() {
           "PENDING"
 
         ).toUpperCase();
+
+        // Keep the unpaid order in My Orders, but detach its local checkout
+        // reference so a future cart starts a fresh Cashfree order.
+        if (Number(pendingRef.current) === id) {
+          await removePendingOrder();
+        }
 
         if (showMessage) {
 
@@ -394,7 +428,7 @@ export default function ReviewOrder() {
 
               "Payment pending",
 
-              "Cashfree has not confirmed this payment yet. Please check the order status. Do not place another order.",
+              "Cashfree has not confirmed this payment. Your unpaid order remains in My Orders. A future checkout will use its own amount.",
 
               [
 
@@ -446,6 +480,11 @@ export default function ReviewOrder() {
         }
 
       } finally {
+        // An unverified order remains on the backend; never let its saved
+        // session block or replace a later checkout.
+        if (Number(pendingRef.current) === id) {
+          await removePendingOrder().catch(() => {});
+        }
 
         verifyingRef.current = false;
 
@@ -527,172 +566,64 @@ export default function ReviewOrder() {
     [checkPayment, pendingOrderId]
   );
 
-  const continuePendingPayment = useCallback(async () => {
-    const id = Number(pendingRef.current || pendingOrderId);
-
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      Alert.alert("Payment unavailable", "No pending order was found.");
-      return;
-    }
-
-    if (placing || checkingPayment || submittingRef.current) {
-      return;
-    }
-
-    submittingRef.current = true;
-    setPlacing(true);
-
-    try {
-      const status = await getPaymentStatus(id);
-
-      if (paymentIsPaid(status)) {
-        await removePendingOrder();
-        clear();
-        router.replace(`/order/${id}`);
-        return;
-      }
-
-      // Ask the backend to create/reuse a valid Cashfree session
-      // for this existing TWINTO order. Never create a second order.
-      const retryResult = await retryCashfreePayment(id);
-
-      if (retryResult?.isPaid || paymentIsPaid(retryResult)) {
-        await removePendingOrder();
-        clear();
-        router.replace(`/order/${id}`);
-        return;
-      }
-
-      if (!retryResult?.cashfree) {
-        throw new Error(
-          "Backend did not return Cashfree payment session details."
-        );
-      }
-
-      await startCashfreePayment(id, retryResult.cashfree);
-    } catch (error) {
-      console.error(
-        "[CASHFREE] Retry payment failed:",
-        error?.status,
-        error?.message || error
-      );
-
-      if (Number(error?.status) === 404) {
-        await removePendingOrder();
-        Alert.alert(
-          "Previous order not found",
-          "The old order is not available. You can now place a new order."
-        );
-      } else {
-        Alert.alert(
-          "Unable to start payment",
-          error?.message ||
-            "Your existing order is saved. Please try again."
-        );
-      }
-    } finally {
-      submittingRef.current = false;
-      if (mountedRef.current) {
-        setPlacing(false);
-      }
-    }
-  }, [
-    pendingOrderId,
-    placing,
-    checkingPayment,
-    removePendingOrder,
-    clear,
-    router,
-    startCashfreePayment,
-  ]);
-
-  // Restore an existing payment after app restart.
-
+  // Previous unpaid orders remain on the server and can be viewed in My Orders.
+  // Do not restore them into a NEW checkout or reuse their Cashfree sessions.
   useEffect(() => {
+    AsyncStorage.removeItem(PENDING_ORDER_KEY).catch((error) => {
+      console.log("[CHECKOUT] Pending reference cleanup:", error?.message);
+    });
+  }, []);
 
-    let active = true;
+  // Validate the saved coupon whenever the review page opens or the cart changes.
+  // Never trust the stored discount as the final payable amount.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      couponCheckingRef.current = true;
+      setCouponChecking(true);
+      setCouponError("");
 
-    async function restorePending() {
-
-      try {
-
-        const saved = await AsyncStorage.getItem(
-
-          PENDING_ORDER_KEY
-
-        );
-
-        if (!active || !saved) return;
-
-        const id = Number(saved);
-
-        if (!Number.isSafeInteger(id) || id <= 0) {
-          await AsyncStorage.removeItem(PENDING_ORDER_KEY);
-          return;
-        }
-
-        // Do not blindly restore an old ID. Confirm that the order still
-        // exists in this backend before showing it as a pending payment.
+      (async () => {
         try {
-          const status = await getPaymentStatus(id);
-
+          const saved = await AsyncStorage.getItem(COUPON_STORAGE_KEY);
           if (!active) return;
-
-          if (paymentIsPaid(status)) {
-            await AsyncStorage.removeItem(PENDING_ORDER_KEY);
-            pendingRef.current = null;
-            setPendingOrderId(null);
-            clear();
-            router.replace(`/order/${id}`);
+          if (!saved) {
+            couponRef.current = null;
+            setCoupon(null);
             return;
           }
-
-          pendingRef.current = id;
-          setPendingOrderId(id);
-          console.log("[CHECKOUT] Restored valid pending order:", id);
-        } catch (validationError) {
-          console.log(
-            "[CHECKOUT] Pending order restore validation:",
-            validationError?.status,
-            validationError?.message
-          );
-
-          if (Number(validationError?.status) === 404) {
-            await AsyncStorage.removeItem(PENDING_ORDER_KEY);
-            pendingRef.current = null;
-            if (active) setPendingOrderId(null);
-            console.log("[CHECKOUT] Removed stale pending order:", id);
-          } else {
-            // Preserve the ID on network/auth/server errors so a possible
-            // real unpaid order is not duplicated without verification.
-            pendingRef.current = id;
-            if (active) setPendingOrderId(id);
+          const parsed = JSON.parse(saved);
+          const code = String(parsed?.code || "").trim().toUpperCase();
+          if (!code) {
+            couponRef.current = null;
+            setCoupon(null);
+            return;
+          }
+          const result = await validateCoupon(code, Number(itemTotal) || 0);
+          if (!active) return;
+          const updated = {
+            code,
+            discount: Math.max(0, Number(result?.discount) || 0),
+          };
+          couponRef.current = updated;
+          setCoupon(updated);
+          await AsyncStorage.setItem(COUPON_STORAGE_KEY, JSON.stringify(updated));
+        } catch (error) {
+          if (!active) return;
+          couponRef.current = null;
+          setCoupon(null);
+          setCouponError(error?.message || "Coupon could not be validated.");
+          // Do not delete the saved code on temporary network failures.
+        } finally {
+          if (active) {
+            couponCheckingRef.current = false;
+            setCouponChecking(false);
           }
         }
-
-      } catch (error) {
-
-        console.log(
-
-          "Pending order restore failed:",
-
-          error?.message
-
-        );
-
-      }
-
-    }
-
-    restorePending();
-
-    return () => {
-
-      active = false;
-
-    };
-
-  }, []);
+      })();
+      return () => { active = false; };
+    }, [itemTotal])
+  );
 
   // Load delivery address whenever review regains focus.
 
@@ -708,23 +639,22 @@ export default function ReviewOrder() {
 
           setLoadingAddress(true);
 
-          const list = await getAddresses();
+           const [list, savedId] = await Promise.all([
+             getAddresses(),
+             getCheckoutAddressId(),
+           ]);
 
-          if (active) {
-
-            setAddress(
-
-              list.find((a) => a.isDefault) ||
-
-              list[0] ||
-
-              null
-
-            );
-
-          }
+           if (active) {
+             const available = (Array.isArray(list) ? list : []).filter(addressIsAvailable);
+             const selected = savedId
+               ? available.find((a) => Number(a.id) === Number(savedId))
+               : null;
+             // Never silently replace an explicitly selected address with another one.
+             setAddress(selected || (savedId ? null : available.find((a) => a.isDefault) || available[0] || null));
+           }
 
         } catch (error) {
+          if (active) setAddress(null);
 
           console.log(
 
@@ -754,7 +684,7 @@ export default function ReviewOrder() {
 
       };
 
-    }, [])
+    }, [selectedLocationId])
 
   );
 
@@ -812,7 +742,9 @@ export default function ReviewOrder() {
 
       placing ||
 
-      checkingPayment
+      checkingPayment ||
+
+      webCheckoutVisible
 
     ) {
 
@@ -820,75 +752,14 @@ export default function ReviewOrder() {
 
     }
 
-    // Check AsyncStorage as well as React state. The restore effect may
-    // still be running when the customer taps Place Order.
-    const savedPending = await AsyncStorage.getItem(PENDING_ORDER_KEY);
-    const existingId = Number(
-      pendingRef.current || pendingOrderId || savedPending
-    );
-
-    if (Number.isSafeInteger(existingId) && existingId > 0) {
-      submittingRef.current = true;
-      setPlacing(true);
-
-      try {
-        console.log("[CHECKOUT] Validating saved order before new order:", existingId);
-        const status = await getPaymentStatus(existingId);
-
-        if (paymentIsPaid(status)) {
-          await removePendingOrder();
-          clear();
-          router.replace(`/order/${existingId}`);
-          return;
-        }
-
-        // The order exists and is unpaid. Reuse it; do not create a duplicate.
-        pendingRef.current = existingId;
-        setPendingOrderId(existingId);
-
-        Alert.alert(
-          "Existing online order",
-          `Order #${existingId} already exists with payment status ${status?.paymentStatus || "PENDING"}. To avoid a duplicate order, open this order or complete its online payment before placing another order. Selecting Cash on Delivery does not change the payment method of an existing order.`,
-          [
-            {
-              text: "Continue Payment",
-              onPress: () => continuePendingPayment(),
-            },
-            {
-              text: "Check Payment",
-              onPress: () => checkPayment(existingId),
-            },
-            {
-              text: "View Order",
-              onPress: () => router.push(`/order/${existingId}`),
-            },
-            { text: "Cancel", style: "cancel" },
-          ]
-        );
-        return;
-      } catch (validationError) {
-        console.log(
-          "[CHECKOUT] Saved order validation failed:",
-          validationError?.status,
-          validationError?.message
-        );
-
-        if (Number(validationError?.status) === 404) {
-          // Stale order ID: remove it and continue to create a fresh order.
-          await removePendingOrder();
-          console.log("[CHECKOUT] Stale order cleared; creating a new order.");
-        } else {
-          Alert.alert(
-            "Unable to check previous order",
-            validationError?.message ||
-              "Please check your connection and try again. A new order was not created."
-          );
-          return;
-        }
-      } finally {
-        submittingRef.current = false;
-        if (mountedRef.current) setPlacing(false);
-      }
+    // Always create an order for the CURRENT cart. An old unpaid order
+    // must never redirect checkout to its previous Cashfree session.
+    if (webCheckoutVisible || pendingRef.current || pendingOrderId) {
+      Alert.alert(
+        "Payment in progress",
+        "Close the current payment window and allow its status check to finish before trying again."
+      );
+      return;
     }
 
     if (!normalizedCart.length) {
@@ -919,11 +790,45 @@ export default function ReviewOrder() {
 
     }
 
+         // Re-read the selection before submitting: it may have changed since focus.
+     try {
+       const [latestAddresses, savedId] = await Promise.all([
+         getAddresses(),
+         getCheckoutAddressId(),
+       ]);
+       const latest = (Array.isArray(latestAddresses) ? latestAddresses : []);
+       const current = savedId
+         ? latest.find((a) => Number(a.id) === Number(savedId))
+         : latest.find((a) => Number(a.id) === Number(address.id));
+       if (!current || !addressIsAvailable(current) || Number(current.id) !== Number(address.id)) {
+         Alert.alert(
+           "Delivery address unavailable",
+           "Your selected address is unavailable or has changed. Please select an available delivery address again."
+         );
+         return;
+       }
+     } catch (error) {
+       Alert.alert("Unable to verify address", error?.message || "Please try again.");
+       return;
+     }
+
+if (couponCheckingRef.current) {
+      Alert.alert("Please wait", "Checking your coupon. Please try again in a moment.");
+      return;
+    }
+
     submittingRef.current = true;
 
     setPlacing(true);
 
     try {
+      // Revalidate at submission time; the backend remains authoritative.
+      let couponCode;
+      if (couponRef.current?.code) {
+        const validated = await validateCoupon(couponRef.current.code, Number(itemTotal) || 0);
+        if (!validated) throw new Error("Coupon validation failed. Please retry.");
+        couponCode = couponRef.current.code;
+      }
 
       // Sync cart before creating the backend order.
 
@@ -938,6 +843,7 @@ export default function ReviewOrder() {
         tip: Number(tip) || 0,
 
         sendAddressToAdmin: true,
+        ...(couponCode ? { couponCode } : {}),
 
       });
 
@@ -963,6 +869,7 @@ export default function ReviewOrder() {
 
       if (!isCashfree) {
 
+        await AsyncStorage.removeItem(COUPON_STORAGE_KEY).catch(() => {});
         clear();
 
         router.replace(`/order/${orderId}`);
@@ -1041,67 +948,51 @@ export default function ReviewOrder() {
 
     >
 
-      <StatusBar barStyle="light-content" backgroundColor="#C9004F" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* HEADER */}
 
-      <View style={styles.header}>
+    {/* CLEAN WHITE HEADER */}
+<View style={styles.header}>
+  <Pressable
+    onPress={() => router.back()}
+    style={styles.backButton}
+    disabled={busy}
+  >
+    <Ionicons
+      name="arrow-back"
+      size={22}
+      color={COLORS.text}
+    />
+  </Pressable>
 
-        <Pressable
+  <View style={styles.headerCenter}>
+    <Text style={styles.headerTitle}>
+      Review Order
+    </Text>
 
-          onPress={() => router.back()}
+    <Text style={styles.headerSubtitle}>
+      Check everything before placing your order
+    </Text>
+  </View>
 
-          style={styles.backButton}
+  <View style={styles.headerTrailing}>
+    <Ionicons
+      name="receipt-outline"
+      size={21}
+      color={COLORS.primary}
+    />
+  </View>
+</View>
 
-          disabled={busy}
-
-        >
-
-          <Ionicons
-
-            name="arrow-back"
-
-            size={21}
-
-            color="#FFFFFF"
-
-          />
-
-        </Pressable>
-
-        <View style={styles.headerCenter}>
-
-          <Text style={styles.headerTitle}>
-
-            Review Order
-
-          </Text>
-
-          <Text style={styles.headerSubtitle}>
-
-            Check everything before placing your order
-
-          </Text>
-
-        </View>
-
-        <View style={{ width: 42 }} />
-
-      </View>
-
-      <ScrollView
-
-        showsVerticalScrollIndicator={false}
-
-        contentContainerStyle={[
-
-          styles.content,
-
-          { paddingBottom: 150 + insets.bottom },
-
-        ]}
-
-      >
+    <ScrollView
+  style={{ flex: 1, backgroundColor: COLORS.background }}
+  showsVerticalScrollIndicator={false}
+  contentContainerStyle={[
+    styles.content,
+    { paddingBottom: 150 + insets.bottom },
+  ]}
+>
 
         {/* CHECKOUT PROGRESS */}
 
@@ -1180,68 +1071,6 @@ export default function ReviewOrder() {
           ))}
 
         </View>
-
-        {/* PENDING PAYMENT NOTICE */}
-
-        {isCashfree && !!pendingOrderId && (
-
-          <View style={styles.pendingCard}>
-
-            <Ionicons
-
-              name="time-outline"
-
-              size={22}
-
-              color={COLORS.primary}
-
-            />
-
-            <View style={{ flex: 1 }}>
-
-              <Text style={styles.pendingTitle}>
-
-                Payment confirmation pending
-
-              </Text>
-
-              <Text style={styles.pendingDescription}>
-
-                Order #{pendingOrderId} is already
-
-                created. Check its payment status
-
-                before placing another order.
-
-              </Text>
-
-              <Pressable
-
-                disabled={busy}
-
-                onPress={continuePendingPayment}
-
-                style={styles.pendingButton}
-
-              >
-
-                <Text style={styles.pendingButtonText}>
-
-                  {checkingPayment
-
-                    ? "Checking..."
-
-                    : "Continue Payment"}
-
-                </Text>
-
-              </Pressable>
-
-            </View>
-
-          </View>
-
-        )}
 
         {/* DELIVERY ADDRESS */}
 
@@ -1863,6 +1692,24 @@ export default function ReviewOrder() {
 
           ))}
 
+          {couponChecking && (
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Checking coupon...</Text>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            </View>
+          )}
+          {!!coupon && !couponChecking && (
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Coupon ({coupon.code})</Text>
+              <Text style={[styles.billValue, { color: "#15803D" }]}>-{money(discount)}</Text>
+            </View>
+          )}
+          {!!couponError && (
+            <Text style={{ color: COLORS.danger, fontSize: 11, marginTop: 8 }}>
+              Coupon not applied: {couponError}
+            </Text>
+          )}
+
           <View style={styles.divider} />
 
           <View style={styles.totalRow}>
@@ -1885,7 +1732,7 @@ export default function ReviewOrder() {
 
             <Text style={styles.totalValue}>
 
-              {money(total)}
+              {money(estimatedTotal)}
 
             </Text>
 
@@ -2024,7 +1871,7 @@ export default function ReviewOrder() {
 
           <Text style={styles.bottomTotal}>
 
-            {money(total)}
+            {money(estimatedTotal)}
 
           </Text>
 
@@ -2036,8 +1883,6 @@ export default function ReviewOrder() {
 
             busy ||
 
-            (isCashfree && Boolean(pendingOrderId)) ||
-
             loadingAddress
 
           }
@@ -2048,7 +1893,7 @@ export default function ReviewOrder() {
 
             styles.placeButton,
 
-            (busy || (isCashfree && pendingOrderId)) &&
+            busy &&
 
               styles.disabledButton,
 
@@ -2067,10 +1912,6 @@ export default function ReviewOrder() {
               : checkingPayment
 
                 ? "VERIFYING..."
-
-                : isCashfree && pendingOrderId
-
-                  ? "PAYMENT PENDING"
 
                   : isCashfree
 
@@ -2132,7 +1973,7 @@ const styles = StyleSheet.create({
 
     flex: 1,
 
-    backgroundColor: COLORS.background,
+    backgroundColor: "#FFFFFF",
 
   },
 
@@ -3145,22 +2986,156 @@ const styles = StyleSheet.create({
 
   },
 
-  // PREMIUM THEME OVERRIDES (visual styling only)
-  safeArea: { flex: 1, backgroundColor: "#C9004F" },
-  content: { paddingHorizontal: 16, paddingTop: 17, backgroundColor: "#FFF9FB" },
   header: {
-    minHeight: 84, paddingHorizontal: 16, paddingVertical: 15,
-    backgroundColor: "#C9004F", borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26, flexDirection: "row", alignItems: "center",
-  },
-  backButton: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
-    alignItems: "center", justifyContent: "center",
-  },
-  headerTitle: { color: "#FFFFFF", fontSize: 19, fontWeight: "900" },
-  headerSubtitle: { color: "#FFE0EB", fontSize: 10, marginTop: 4, fontWeight: "600" },
+  minHeight: 70,
+  paddingHorizontal: 15,
+  paddingVertical: 12,
+  backgroundColor: COLORS.white,
+  borderBottomWidth: 1,
+  borderBottomColor: COLORS.border,
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+backButton: {
+  width: 43,
+  height: 43,
+  borderRadius: 14,
+  backgroundColor: COLORS.pinkSoft,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+headerCenter: {
+  flex: 1,
+  minWidth: 0,
+  alignItems: "flex-start",
+  justifyContent: "center",
+  paddingHorizontal: 12,
+},
+
+
+header: {
+  height: 66,
+  paddingHorizontal: 16,
+  backgroundColor: "#FFFFFF",
+  borderBottomWidth: 1,
+  borderBottomColor: "#EEEEEE",
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+backButton: {
+  width: 42,
+  height: 42,
+  borderRadius: 12,
+  backgroundColor: "#F5F5F5",
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+headerCenter: {
+  flex: 1,
+  minWidth: 0,
+  paddingHorizontal: 12,
+  alignItems: "flex-start",
+  justifyContent: "center",
+},
+
+headerTitle: {
+  color: COLORS.text,
+  fontSize: 18,
+  fontWeight: "800",
+},
+
+headerSubtitle: {
+  marginTop: 3,
+  color: COLORS.muted,
+  fontSize: 10,
+  fontWeight: "500",
+},
+
+headerTrailing: {
+  width: 42,
+  height: 42,
+  borderRadius: 12,
+  backgroundColor: "#F5F5F5",
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+headerTitle: {
+  color: COLORS.text,
+  fontSize: 18,
+  fontWeight: "900",
+  letterSpacing: -0.3,
+},
+
+headerSubtitle: {
+  marginTop: 3,
+  color: COLORS.muted,
+  fontSize: 10,
+  fontWeight: "500",
+},
+
+headerTrailing: {
+  width: 43,
+  height: 43,
+  borderRadius: 14,
+  backgroundColor: COLORS.pinkSoft,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+ // WHITE HEADER — SAME AS CHECKOUT / PAYMENT
+
+safeArea: {
+  flex: 1,
+  backgroundColor: "#FFFFFF",
+},
+
+content: {
+  paddingHorizontal: 16,
+  paddingTop: 17,
+  backgroundColor: "#FFF9FB",
+},
+
+header: {
+  minHeight: 70,
+  paddingHorizontal: 15,
+  paddingVertical: 12,
+  backgroundColor: "#FFFFFF",
+  borderBottomWidth: 1,
+  borderBottomColor: "#E9DDE2",
+  flexDirection: "row",
+  alignItems: "center",
+  borderBottomLeftRadius: 0,
+  borderBottomRightRadius: 0,
+},
+
+backButton: {
+  width: 43,
+  height: 43,
+  borderRadius: 14,
+  backgroundColor: "#FFF0F5",
+  borderWidth: 0,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+headerTitle: {
+  color: "#172033",
+  fontSize: 18,
+  fontWeight: "900",
+  letterSpacing: -0.3,
+},
+
+headerSubtitle: {
+  color: "#858B95",
+  fontSize: 10,
+  marginTop: 3,
+  fontWeight: "500",
+},
   progressCard: {
     padding: 15, borderRadius: 22, backgroundColor: "#FFFFFF",
     borderWidth: 1, borderColor: "#E9DDE2", flexDirection: "row",

@@ -11,12 +11,12 @@ import {
 } from "react-native";
 
 import {
-  SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
 
 import { COLORS } from "../../constants";
 import { useCart } from "../../context";
@@ -47,7 +47,9 @@ export default function Cart() {
     platformFee = 0,
     deliveryFee = 0,
     freeDelivery = false,
-    freeDeliveryMaxItems = 3,
+    freeDeliveryMaxItems = 0,
+    freeDeliveryEnabled = false,
+    refreshLocation,
     tip = 0,
     setTip,
     total = 0,
@@ -55,6 +57,17 @@ export default function Cart() {
     decrease,
     clear,
   } = useCart();
+
+  // Fetch the latest admin settings each time the cart becomes visible.
+  useFocusEffect(
+    useCallback(() => {
+      if (typeof refreshLocation === "function") {
+        refreshLocation().catch((error) =>
+          console.log("[CART] Location refresh:", error?.message)
+        );
+      }
+    }, [refreshLocation])
+  );
 
   // ORIGINAL CART NORMALIZATION
   const normalizedCart = cart
@@ -114,93 +127,29 @@ export default function Cart() {
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={PREMIUM.white}
         translucent={Platform.OS === "android" && Platform.Version >= 35}
       />
 
-      {/* FULL WIDTH FIXED HEADER */}
-      <View
-        style={[
-          styles.headerBackground,
-          {
-            paddingTop: topInset + 18,
-          },
-        ]}
-      >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
-
+      {/* CLEAN WHITE FIXED HEADER */}
+      <View style={[styles.headerBackground, { paddingTop: topInset + 10 }]}>
         <View style={styles.headerRow}>
-          <View style={styles.headerSide} />
-
-          <View style={styles.headerTitleBox}>
-            <Text style={styles.headerTitle}>
-              My Cart
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Your shopping basket
-            </Text>
+          <View style={styles.headerIcon}>
+            <Ionicons name="cart-outline" size={23} color={PREMIUM.primary} />
           </View>
-
+          <View style={styles.headerTitleBox}>
+            <Text style={styles.headerTitle}>My Cart</Text>
+            <Text style={styles.headerSubtitle}>Your shopping basket</Text>
+          </View>
           {!isEmpty ? (
-            <Pressable
-              onPress={clear}
-              hitSlop={10}
-              style={styles.clearButton}
-            >
-              <Ionicons
-                name="trash-outline"
-                size={15}
-                color={PREMIUM.white}
-              />
-
-              <Text style={styles.clearText}>
-                Clear
-              </Text>
+            <Pressable onPress={clear} hitSlop={10} style={styles.clearButton}>
+              <Ionicons name="trash-outline" size={16} color={PREMIUM.primary} />
+              <Text style={styles.clearText}>Clear</Text>
             </Pressable>
           ) : (
             <View style={styles.headerSide} />
           )}
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="bag-handle-outline"
-              size={20}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              {isEmpty
-                ? "Your basket is waiting"
-                : `${itemCount} ${
-                    itemCount === 1 ? "item" : "items"
-                  } in your cart`}
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              {isEmpty
-                ? "Discover your everyday essentials"
-                : "Fresh groceries, delivered with care"}
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name={
-                isEmpty
-                  ? "heart-outline"
-                  : "checkmark"
-              }
-              size={16}
-              color={PREMIUM.white}
-            />
-          </View>
         </View>
       </View>
 
@@ -281,35 +230,45 @@ export default function Cart() {
             </View>
 
             {/* FREE DELIVERY */}
-            {freeDelivery && (
-              <View style={styles.freeDeliveryCard}>
-                <View style={styles.freeIcon}>
-                  <Ionicons
-                    name="bicycle-outline"
-                    size={22}
-                    color={PREMIUM.primary}
-                  />
-                </View>
+          {/* FREE DELIVERY */}
+{freeDeliveryEnabled && freeDeliveryMaxItems > 0 && (
+  <View style={styles.freeDeliveryCard}>
+    <View style={styles.freeIcon}>
+      <Ionicons
+        name="bicycle-outline"
+        size={22}
+        color={PREMIUM.primary}
+      />
+    </View>
 
-                <View style={styles.freeContent}>
-                  <Text style={styles.freeTitle}>
-                    FREE DELIVERY
-                  </Text>
+    <View style={styles.freeContent}>
+      <Text style={styles.freeTitle}>
+        {freeDelivery
+          ? "FREE DELIVERY UNLOCKED!"
+          : "UNLOCK FREE DELIVERY"}
+      </Text>
 
-                  <Text style={styles.freeSubtitle}>
-                    ORDER UP TO {freeDeliveryMaxItems} ITEMS
-                    {"\n"}
-                    FOR FREE DELIVERY
-                  </Text>
-                </View>
+      <Text style={styles.freeSubtitle}>
+        {freeDelivery
+          ? `Your order qualifies for FREE delivery (${freeDeliveryMaxItems}+ items).`
+          : `Add ${Math.max(
+              0,
+              freeDeliveryMaxItems - itemCount
+            )} more ${
+              freeDeliveryMaxItems - itemCount === 1
+                ? "item"
+                : "items"
+            } for FREE delivery.`}
+      </Text>
+    </View>
 
-                <Ionicons
-                  name="checkmark-circle"
-                  size={20}
-                  color={PREMIUM.primary}
-                />
-              </View>
-            )}
+    <Ionicons
+      name="checkmark-circle"
+      size={20}
+      color={PREMIUM.primary}
+    />
+  </View>
+)}
 
             {/* CART ITEMS */}
             <View style={styles.section}>
@@ -355,7 +314,7 @@ export default function Cart() {
                         <Image
                           source={imageSource}
                           style={styles.productImage}
-                          resizeMode="contain"
+                          resizeMode="cover"
                         />
                       ) : (
                         <Ionicons
@@ -617,133 +576,58 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM.background,
   },
 
-  // FULL-WIDTH PINK HEADER
+  // CLEAN WHITE HEADER
   headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 22,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
+    backgroundColor: PREMIUM.white,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: PREMIUM.border,
   },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-
-  headerSide: {
-    width: 62,
+  headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.pinkSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
-
+  headerSide: { width: 65 },
   headerTitleBox: {
     flex: 1,
-    alignItems: "center",
+    paddingHorizontal: 12,
   },
-
   headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 18,
-    fontWeight: "800",
+    color: PREMIUM.navy,
+    fontSize: 19,
+    fontWeight: "900",
     letterSpacing: -0.3,
   },
-
   headerSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
+    color: PREMIUM.muted,
+    fontSize: 11,
     fontWeight: "500",
     marginTop: 3,
   },
-
   clearButton: {
-    width: 62,
-    height: 35,
+    minWidth: 65,
+    height: 38,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.20)",
+    backgroundColor: PREMIUM.pinkSoft,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
+    gap: 5,
   },
-
   clearText: {
-    color: PREMIUM.white,
+    color: PREMIUM.primary,
     fontSize: 11,
     fontWeight: "800",
-  },
-
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 17,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  headerInfoIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 13,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfoBadge: {
-    width: 29,
-    height: 29,
-    borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
   },
 
   scrollView: {
@@ -895,7 +779,7 @@ const styles = StyleSheet.create({
   productRow: {
     flexDirection: "row",
     paddingVertical: 8,
-    minHeight: 120,
+    minHeight: 112,
     alignItems: "flex-start",
   },
 
@@ -907,8 +791,8 @@ const styles = StyleSheet.create({
   },
 
   imageBox: {
-    width: 82,
-    height: 95,
+    width: 92,
+    height: 100,
     borderRadius: 14,
     backgroundColor: PREMIUM.imageBg,
     borderWidth: 1,
@@ -919,8 +803,8 @@ const styles = StyleSheet.create({
   },
 
   productImage: {
-    width: 73,
-    height: 77,
+    width: "100%",
+    height: "100%",
   },
 
   productInfo: {

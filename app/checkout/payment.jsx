@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -8,11 +8,14 @@ import {
   View,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { validateCoupon } from "../../services/couponService";
 
 import { COLORS } from "../../constants";
 import { useCart } from "../../context";
@@ -31,6 +34,8 @@ const PREMIUM = {
   gold: "#FFE19A",
 };
 
+const COUPON_STORAGE_KEY = "twinto_checkout_coupon";
+
 export default function Payment() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -48,6 +53,55 @@ export default function Payment() {
   // DEFAULT PAYMENT IS NOW CASHFREE
   const [selectedPayment, setSelectedPayment] =
     useState("CASHFREE");
+
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [checkingCoupon, setCheckingCoupon] = useState(true);
+  const [couponMessage, setCouponMessage] = useState("");
+
+  // Refresh when entering this screen, including when returning from Review.
+  // Never trust a locally stored discount without server validation.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const loadCoupon = async () => {
+        setCheckingCoupon(true);
+        setAppliedCoupon(null);
+        setCouponMessage("");
+        try {
+          const raw = await AsyncStorage.getItem(COUPON_STORAGE_KEY);
+          if (!raw) return;
+          const saved = JSON.parse(raw);
+          const code = String(saved?.code || "").trim().toUpperCase();
+          if (!code) return;
+          const response = await validateCoupon(code, Number(itemTotal || 0));
+          // Support both direct API results and the common {data:{...}} envelope.
+          const validated = response?.data?.code ? response.data : response;
+          const amount = Number(validated?.discount);
+          if (!Number.isFinite(amount) || amount < 0) {
+            throw new Error("Coupon validation returned an invalid discount.");
+          }
+          if (active) {
+            setAppliedCoupon({
+              code: String(validated?.code || code).toUpperCase(),
+              discount: Math.min(Number(itemTotal || 0), amount),
+            });
+          }
+        } catch (error) {
+          if (active) {
+            setAppliedCoupon(null);
+            setCouponMessage(error?.message || "Coupon could not be verified.");
+          }
+        } finally {
+          if (active) setCheckingCoupon(false);
+        }
+      };
+      loadCoupon();
+      return () => { active = false; };
+    }, [itemTotal])
+  );
+
+  const couponDiscount = appliedCoupon?.discount || 0;
+  const estimatedPayable = Math.max(0, Number(total || 0) - couponDiscount);
 
   // ORIGINAL PAYMENT METHODS - UNCHANGED
   const paymentMethods = [
@@ -68,6 +122,7 @@ export default function Payment() {
 
   // ORIGINAL NAVIGATION LOGIC - UNCHANGED
   const handleContinue = () => {
+    if (checkingCoupon) return;
     router.push({
       pathname: "/checkout/review",
       params: {
@@ -94,71 +149,46 @@ export default function Payment() {
       />
 
       {/* FIXED PREMIUM HEADER */}
-      <View
-        style={[
-          styles.headerBackground,
-          { paddingTop: topInset + 16 },
-        ]}
-      >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
+{/* HEADER — SAME DESIGN AS CHECKOUT */}
+<View
+  style={[
+    styles.headerBackground,
+    { paddingTop: topInset + 10 },
+  ]}
+>
+  <View style={styles.headerRow}>
+    <Pressable
+      style={styles.backButton}
+      onPress={() => router.back()}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+    >
+      <Ionicons
+        name="arrow-back"
+        size={22}
+        color={PREMIUM.navy}
+      />
+    </Pressable>
 
-        <View style={styles.headerRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.backButtonPressed,
-            ]}
-            onPress={() => router.back()}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
+    <View style={styles.headerCenter}>
+      <Text style={styles.headerTitle}>
+        Payment
+      </Text>
 
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              Payment
-            </Text>
+      <Text style={styles.headerSubtitle}>
+        Choose your payment method
+      </Text>
+    </View>
 
-            <Text style={styles.headerSubtitle}>
-              Choose your payment method
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="card-outline"
-              size={20}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              Secure Payment
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              Select how you want to pay
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={18}
-              color={PREMIUM.white}
-            />
-          </View>
-        </View>
-      </View>
+    <View style={styles.headerTrailing}>
+      <Ionicons
+        name="card-outline"
+        size={21}
+        color={PREMIUM.primary}
+      />
+    </View>
+  </View>
+</View>
 
       {/* SCROLLABLE CONTENT */}
       <ScrollView
@@ -419,13 +449,35 @@ export default function Payment() {
             </View>
           )}
 
+          {/* APPLIED COUPON DISCOUNT */}
+          {checkingCoupon && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Checking coupon...</Text>
+              <ActivityIndicator size="small" color={PREMIUM.primary} />
+            </View>
+          )}
+          {!!appliedCoupon && !checkingCoupon && (
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryLabelRow}>
+                <View style={styles.summarySmallIcon}>
+                  <Ionicons name="pricetag-outline" size={14} color="#15803D" />
+                </View>
+                <Text style={styles.summaryLabel}>Coupon ({appliedCoupon.code})</Text>
+              </View>
+              <Text style={styles.couponDiscount}>−₹{couponDiscount.toFixed(2)}</Text>
+            </View>
+          )}
+          {!!couponMessage && !checkingCoupon && (
+            <Text style={styles.couponWarning}>{couponMessage}</Text>
+          )}
+
           <View style={styles.divider} />
 
           {/* TOTAL */}
           <View style={styles.totalRow}>
             <View style={styles.totalContent}>
               <Text style={styles.totalLabel}>
-                Total Amount
+                {appliedCoupon ? "Estimated Total" : "Total Amount"}
               </Text>
 
               <Text style={styles.totalSubtitle}>
@@ -434,7 +486,7 @@ export default function Payment() {
             </View>
 
             <Text style={styles.totalValue}>
-              ₹{total.toFixed(2)}
+              ₹{estimatedPayable.toFixed(2)}
             </Text>
           </View>
         </View>
@@ -454,11 +506,11 @@ export default function Payment() {
       >
         <View style={styles.bottomAmount}>
           <Text style={styles.bottomLabel}>
-            Payable Amount
+            {appliedCoupon ? "Estimated Payable" : "Payable Amount"}
           </Text>
 
           <Text style={styles.bottomTotal}>
-            ₹{total.toFixed(2)}
+            ₹{estimatedPayable.toFixed(2)}
           </Text>
         </View>
 
@@ -468,6 +520,7 @@ export default function Payment() {
             pressed && styles.continueButtonPressed,
           ]}
           onPress={handleContinue}
+          disabled={checkingCoupon}
         >
           <Text style={styles.continueText}>
             Continue
@@ -840,6 +893,18 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
+  couponDiscount: {
+    color: "#15803D",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  couponWarning: {
+    color: "#B45309",
+    fontSize: 10,
+    marginTop: 8,
+    lineHeight: 16,
+  },
+
   // SUMMARY
   summarySection: {
     marginTop: 20,
@@ -1038,4 +1103,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
+  // HEADER STYLES — ADD INSIDE StyleSheet.create({ ... })
+
+headerBackground: {
+  backgroundColor: PREMIUM.white,
+  paddingHorizontal: 15,
+  paddingBottom: 13,
+  borderBottomWidth: 1,
+  borderBottomColor: PREMIUM.border,
+},
+
+headerRow: {
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+backButton: {
+  width: 43,
+  height: 43,
+  borderRadius: 14,
+  backgroundColor: PREMIUM.pinkSoft,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+headerCenter: {
+  flex: 1,
+  minWidth: 0,
+  alignItems: "flex-start",
+  paddingHorizontal: 12,
+},
+
+headerTitle: {
+  color: PREMIUM.navy,
+  fontSize: 18,
+  fontWeight: "900",
+  letterSpacing: -0.3,
+},
+
+headerSubtitle: {
+  color: PREMIUM.muted,
+  fontSize: 10,
+  marginTop: 3,
+},
+
+headerTrailing: {
+  width: 43,
+  height: 43,
+  borderRadius: 14,
+  backgroundColor: PREMIUM.pinkSoft,
+  alignItems: "center",
+  justifyContent: "center",
+},
 });

@@ -1,3 +1,4 @@
+
 import {
   StyleSheet,
   Text,
@@ -9,12 +10,41 @@ import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../constants";
 
 export default function FreeDeliveryBanner({
-  itemCount,
-  freeDelivery,
+  itemCount = 0,
+  freeDelivery = false,
+  freeDeliveryEnabled = true,
+  freeDeliveryMaxItems = 3,
 }) {
-  if (itemCount === 0) {
+  const count = Math.max(0, Number(itemCount) || 0);
+
+  const limit = Math.max(
+    0,
+    Number(freeDeliveryMaxItems) || 0
+  );
+
+  // Do not show for empty cart, disabled offer,
+  // or invalid admin item limit.
+  if (
+    count === 0 ||
+    !freeDeliveryEnabled ||
+    limit <= 0
+  ) {
     return null;
   }
+
+  // The backend and cart context determine
+  // whether delivery is actually free.
+  const unlocked = Boolean(freeDelivery);
+
+  const remainingItems = Math.max(
+    0,
+    limit - count
+  );
+
+  const progress = Math.min(
+    (count / limit) * 100,
+    100
+  );
 
   return (
     <View style={styles.container}>
@@ -31,7 +61,7 @@ export default function FreeDeliveryBanner({
 
       {/* Content */}
       <View style={styles.content}>
-        {freeDelivery ? (
+        {unlocked ? (
           <>
             <View style={styles.titleRow}>
               <Text style={styles.title}>
@@ -54,15 +84,21 @@ export default function FreeDeliveryBanner({
             <Text style={styles.subtitle}>
               Your order qualifies for free delivery.
             </Text>
+
+            <Text style={styles.qualifiedText}>
+              Free delivery on {limit} or more items.
+            </Text>
           </>
         ) : (
           <>
             <Text style={styles.title}>
-              FREE DELIVERY AVAILABLE
+              UNLOCK FREE DELIVERY
             </Text>
 
             <Text style={styles.subtitle}>
-              Order up to 3 items and enjoy free delivery.
+              Add {remainingItems} more{" "}
+              {remainingItems === 1 ? "item" : "items"}{" "}
+              to get FREE delivery.
             </Text>
 
             <View style={styles.progressRow}>
@@ -71,27 +107,28 @@ export default function FreeDeliveryBanner({
                   style={[
                     styles.progressFill,
                     {
-                      width: `${Math.min(
-                        (itemCount / 3) * 100,
-                        100
-                      )}%`,
+                      width: `${progress}%`,
                     },
                   ]}
                 />
               </View>
 
               <Text style={styles.count}>
-                {itemCount}/3
+                {count}/{limit}
               </Text>
             </View>
           </>
         )}
       </View>
 
-      {/* Arrow */}
+      {/* Arrow / Status */}
       <View style={styles.arrow}>
         <Ionicons
-          name="chevron-forward"
+          name={
+            unlocked
+              ? "checkmark"
+              : "chevron-forward"
+          }
           size={15}
           color={COLORS.muted}
         />
@@ -206,6 +243,15 @@ const styles = StyleSheet.create({
     lineHeight: 15,
 
     marginTop: 4,
+  },
+
+  qualifiedText: {
+    color: COLORS.primary,
+
+    fontSize: 10,
+    fontWeight: "700",
+
+    marginTop: 5,
   },
 
   progressRow: {

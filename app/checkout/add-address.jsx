@@ -337,28 +337,16 @@ export default function AddAddressScreen() {
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={PREMIUM.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
         }
       />
 
-      {/* =====================================
-          PREMIUM FIXED HEADER
-      ===================================== */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topInset + 16,
-          },
-        ]}
-      >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
-
+      {/* WHITE HEADER — MATCHES CHECKOUT / PAYMENT */}
+      <View style={[styles.header, { paddingTop: topInset + 10 }]}>
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => router.back()}
@@ -366,21 +354,16 @@ export default function AddAddressScreen() {
               styles.backButton,
               pressed && styles.pressed,
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
+            <Ionicons name="arrow-back" size={22} color={PREMIUM.navy} />
           </Pressable>
 
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>
-              {isEditMode
-                ? "Edit Address"
-                : "Add New Address"}
+              {isEditMode ? "Edit Address" : "Add New Address"}
             </Text>
-
             <Text style={styles.headerSubtitle}>
               {isEditMode
                 ? "Update your delivery address"
@@ -388,41 +371,11 @@ export default function AddAddressScreen() {
             </Text>
           </View>
 
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
+          <View style={styles.headerTrailing}>
             <Ionicons
-              name={
-                isEditMode
-                  ? "create-outline"
-                  : "location-outline"
-              }
+              name={isEditMode ? "create-outline" : "location-outline"}
               size={21}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              {isEditMode
-                ? "Update delivery details"
-                : "Your doorstep, our destination"}
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              {isEditMode
-                ? "Keep your address information up to date"
-                : "Add an address for smooth grocery delivery"}
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="navigate-outline"
-              size={18}
-              color={PREMIUM.white}
+              color={PREMIUM.primary}
             />
           </View>
         </View>
@@ -894,126 +847,50 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  // PREMIUM HEADER
+  // WHITE HEADER — SAME AS PAYMENT
   header: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 21,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
+    backgroundColor: PREMIUM.white,
+    paddingHorizontal: 15,
+    paddingBottom: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: PREMIUM.border,
   },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
-
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-
   headerCenter: {
     flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-
-  headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  headerSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    fontWeight: "500",
-    marginTop: 4,
-  },
-
-  headerSpacer: {
-    width: 44,
-    height: 44,
-  },
-
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 19,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  headerInfoIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
     minWidth: 0,
+    alignItems: "flex-start",
+    paddingHorizontal: 12,
   },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
+  headerTitle: {
+    color: PREMIUM.navy,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
   },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
+  headerSubtitle: {
+    color: PREMIUM.muted,
     fontSize: 10,
-    marginTop: 4,
+    marginTop: 3,
   },
-
-  headerInfoBadge: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.17)",
+  headerTrailing: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: PREMIUM.pinkSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
   },
 
   // SCROLL CONTENT

@@ -1,7 +1,8 @@
 
-import { useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -10,92 +11,278 @@ import {
   Text,
   View,
 } from "react-native";
-
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
-
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+} from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import AddressCard from "../../components/checkout/AddressCard";
-import { COLORS } from "../../constants";
-import { getAddresses } from "../../services/addressService";
+import { useCart } from "../../context";
+import {
+  getAddresses,
+  filterAddressesByLocation,
+} from "../../services/addressService";
+import {
+  getCheckoutAddressId,
+  saveValidatedCheckoutAddress,
+} from "../../services/checkoutAddressService";
 
-const PREMIUM = {
+/* =========================================
+   PREMIUM COLORS
+========================================= */
+
+const C = {
   primary: "#C9004F",
-  primaryDark: "#A90042",
+  dark: "#A90042",
   navy: "#172033",
   white: "#FFFFFF",
   background: "#FFF9FB",
-  pinkSoft: "#FFF0F5",
-  pinkLight: "#FDE3EC",
+  soft: "#FFF0F5",
   border: "#E9DDE2",
   muted: "#858B95",
-  gray: "#68717F",
+  green: "#15803D",
   gold: "#FFE19A",
 };
 
+function validId(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0
+    ? id
+    : null;
+}
+
+/* =========================================
+   ADDRESS SELECTION SCREEN
+========================================= */
+
 export default function AddressScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
 
-  // ORIGINAL STATE - UNCHANGED
+  // Use the actual delivery location from Cart Context.
+  const { location } = useCart();
+
+  const contextLocationId =
+    location?.isActive !== false &&
+    location?.isAvailable !== false
+      ? validId(location?.id)
+      : null;
+
+  const paramLocationId = validId(
+    Array.isArray(params.locationId)
+      ? params.locationId[0]
+      : params.locationId
+  );
+
+  // Context is the source of truth.
+  // A stale route parameter must not change the area.
+  const selectedLocationId = contextLocationId;
+
+  const locationConflict =
+    !!paramLocationId &&
+    !!contextLocationId &&
+    paramLocationId !== contextLocationId;
+
   const [addresses, setAddresses] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
-  // ORIGINAL API LOGIC - UNCHANGED
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
+  /* =========================================
+     FILTER AVAILABLE ADDRESSES
+  ========================================= */
 
-      const list = await getAddresses();
+  const availableAddresses =
+    selectedLocationId && !locationConflict
+      ? filterAddressesByLocation(
+          addresses,
+          selectedLocationId
+        )
+      : [];
 
-      setAddresses(list);
+  const selected =
+    availableAddresses.find(
+      (address) =>
+        validId(address.id) === validId(selectedId)
+    ) || null;
 
-      if (list.length && !selectedId) {
-        setSelectedId(list[0].id);
-      }
-    } catch (e) {
-      console.log("Address load error:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedId]);
+  /* =========================================
+     LOAD SAVED ADDRESSES
+  ========================================= */
 
-  // RELOAD EVERY TIME SCREEN GAINS FOCUS
   useFocusEffect(
     useCallback(() => {
+      let active = true;
+
+      const load = async () => {
+        try {
+          setLoading(true);
+          setLoadError("");
+
+          if (!selectedLocationId || locationConflict) {
+            if (active) {
+              setAddresses([]);
+              setSelectedId(null);
+            }
+            return;
+          }
+
+          const [list, savedId] = await Promise.all([
+            getAddresses(),
+            getCheckoutAddressId(),
+          ]);
+
+          if (!active) return;
+
+          const allAddresses = Array.isArray(list)
+            ? list
+            : [];
+
+          const matching =
+            filterAddressesByLocation(
+              allAddresses,
+              selectedLocationId
+            );
+
+          const previouslySelected = matching.find(
+            (item) =>
+              validId(item.id) === validId(savedId)
+          );
+
+          const fallback =
+            matching.find((item) => item.isDefault) ||
+            matching[0] ||
+            null;
+
+          setAddresses(allAddresses);
+          setSelectedId(
+            previouslySelected?.id ??
+              fallback?.id ??
+              null
+          );
+        } catch (error) {
+          if (!active) return;
+
+          console.log(
+            "[ADDRESS SCREEN] Load error:",
+            error
+          );
+
+          setLoadError(
+            error?.message || "Unable to load addresses."
+          );
+
+          setAddresses([]);
+          setSelectedId(null);
+        } finally {
+          if (active) setLoading(false);
+        }
+      };
+
       load();
-    }, [load])
+
+      return () => {
+        active = false;
+      };
+    }, [selectedLocationId, locationConflict])
   );
 
-  // ORIGINAL CONFIRM LOGIC
-  function confirm() {
-    if (!selectedId) return;
-    router.back();
-  }
+  /* =========================================
+     CONFIRM ADDRESS
+  ========================================= */
 
-  // ORIGINAL ADD ADDRESS NAVIGATION
-  function addNewAddress() {
-    router.push("/checkout/add-address");
-  }
+  const confirm = async () => {
+    if (saving) return;
 
-  // ORIGINAL EDIT ADDRESS NAVIGATION
-  function editAddress(address) {
-    if (!address?.id) return;
+    if (!selectedLocationId || locationConflict) {
+      Alert.alert(
+        "Delivery Location Required",
+        "Please select an available delivery location."
+      );
+      return;
+    }
+
+    if (!selected) {
+      Alert.alert(
+        "Select Address",
+        "Please select a delivery address."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      await saveValidatedCheckoutAddress(
+        selected,
+        selectedLocationId
+      );
+
+      router.back();
+    } catch (error) {
+      Alert.alert(
+        "Unable to Select Address",
+        error?.message ||
+          "Please try selecting the address again."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* =========================================
+     ADD ADDRESS
+  ========================================= */
+
+  const addNewAddress = () => {
+    if (!selectedLocationId || locationConflict) {
+      Alert.alert(
+        "Select Delivery Location",
+        "Please select an available delivery location first."
+      );
+      return;
+    }
 
     router.push({
       pathname: "/checkout/add-address",
-      params: { id: String(address.id) },
+      params: {
+        locationId: String(selectedLocationId),
+      },
     });
-  }
+  };
 
-  // ORIGINAL SELECTED ADDRESS LOGIC
-  const selected = addresses.find(
-    (a) => String(a.id) === String(selectedId)
-  );
+  /* =========================================
+     EDIT ADDRESS
+  ========================================= */
+
+  const editAddress = (address) => {
+    if (
+      !address?.id ||
+      !selectedLocationId ||
+      locationConflict
+    ) {
+      return;
+    }
+
+    router.push({
+      pathname: "/checkout/add-address",
+      params: {
+        id: String(address.id),
+        locationId: String(selectedLocationId),
+      },
+    });
+  };
 
   const topInset =
     Platform.OS === "ios" ||
@@ -103,308 +290,288 @@ export default function AddressScreen() {
       ? insets.top
       : 0;
 
+  /* =========================================
+     PREMIUM UI
+  ========================================= */
+
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={PREMIUM.primary}
+        barStyle="dark-content"
+        backgroundColor={C.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
         }
       />
 
-      {/* FIXED PREMIUM HEADER */}
-      <View
-        style={[
-          styles.headerBackground,
-          {
-            paddingTop: topInset + 16,
-          },
-        ]}
-      >
-        <View style={styles.headerCircleOne} />
-        <View style={styles.headerCircleTwo} />
+       {/* WHITE HEADER — SAME AS PAYMENT */}
+       <View style={[styles.header, { paddingTop: topInset + 10 }]}>
+         <View style={styles.headerRow}>
+           <Pressable
+             style={styles.backButton}
+             onPress={() => router.back()}
+             accessibilityRole="button"
+             accessibilityLabel="Go back"
+           >
+             <Ionicons name="arrow-back" size={22} color={C.navy} />
+           </Pressable>
+           <View style={styles.headerCenter}>
+             <Text style={styles.headerTitle}>Delivery Address</Text>
+             <Text style={styles.headerSubtitle}>Choose your delivery address</Text>
+           </View>
+           <View style={styles.headerTrailing}>
+             <Ionicons name="location-outline" size={21} color={C.primary} />
+           </View>
+         </View>
+       </View>
 
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={21}
-              color={PREMIUM.white}
-            />
-          </Pressable>
+      {/* CONTENT */}
 
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              Delivery Address
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              Choose your delivery location
-            </Text>
-          </View>
-
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.headerInfoIcon}>
-            <Ionicons
-              name="location-outline"
-              size={21}
-              color={PREMIUM.gold}
-            />
-          </View>
-
-          <View style={styles.headerInfoContent}>
-            <Text style={styles.headerInfoTitle}>
-              Delivering happiness
-            </Text>
-
-            <Text style={styles.headerInfoSubtitle}>
-              Select where your groceries should arrive
-            </Text>
-          </View>
-
-          <View style={styles.headerInfoBadge}>
-            <Ionicons
-              name="navigate-outline"
-              size={18}
-              color={PREMIUM.white}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* SCROLLABLE CONTENT */}
       <ScrollView
-        style={styles.scrollView}
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scroll,
-          {
-            paddingBottom: 125 + insets.bottom,
-          },
-        ]}
+        contentContainerStyle={{
+          paddingBottom: 130 + insets.bottom,
+        }}
       >
-        {/* INTRO CARD */}
-        <View style={styles.heading}>
-          <View style={styles.headingIcon}>
+        {/* INTRO */}
+
+        <View style={styles.intro}>
+          <View style={styles.introIcon}>
             <Ionicons
               name="map-outline"
-              size={22}
-              color={PREMIUM.primary}
+              size={24}
+              color={C.primary}
             />
           </View>
 
-          <View style={styles.headingContent}>
-            <Text style={styles.title}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.introTitle}>
               Select delivery address
             </Text>
 
-            <Text style={styles.subtitle}>
-              Choose where you want your groceries delivered.
+            <Text style={styles.introSubtitle}>
+              Choose where you want your groceries
+              delivered.
             </Text>
           </View>
         </View>
 
-        {/* SAVED ADDRESSES HEADING */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionHeadingLeft}>
-            <View style={styles.sectionAccent} />
+        {/* SAVED ADDRESS HEADING */}
 
-            <View>
-              <Text style={styles.sectionTitle}>
-                Saved Addresses
-              </Text>
+        <View style={styles.sectionRow}>
+          <View style={styles.sectionAccent} />
 
-              <Text style={styles.sectionSubtitle}>
-                Your available delivery locations
-              </Text>
-            </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>
+              Saved Addresses
+            </Text>
+
+            <Text style={styles.sectionSubtitle}>
+              Your available delivery locations
+            </Text>
           </View>
 
-          <View style={styles.savedBadge}>
+          <View style={styles.countBadge}>
             <Ionicons
               name="checkmark-circle"
               size={13}
-              color={PREMIUM.primary}
+              color={C.primary}
             />
 
-            <Text style={styles.savedBadgeText}>
-              {addresses.length} SAVED
+            <Text style={styles.countText}>
+              {availableAddresses.length} SAVED
             </Text>
           </View>
         </View>
 
-        {/* ORIGINAL LOADING / EMPTY / LIST LOGIC */}
+        {/* LOADING */}
+
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator
               size="large"
-              color={PREMIUM.primary}
+              color={C.primary}
             />
 
             <Text style={styles.loadingText}>
               Loading your addresses...
             </Text>
           </View>
-        ) : addresses.length === 0 ? (
+        ) : availableAddresses.length === 0 ? (
+          /* EMPTY STATE */
+
           <View style={styles.emptyBox}>
-            <View style={styles.emptyIconOuter}>
-              <View style={styles.emptyIcon}>
-                <Ionicons
-                  name="location-outline"
-                  size={32}
-                  color={PREMIUM.primary}
-                />
-              </View>
+            <View style={styles.emptyIcon}>
+              <Ionicons
+                name="location-outline"
+                size={35}
+                color={C.primary}
+              />
             </View>
 
             <Text style={styles.emptyTitle}>
-              No saved addresses yet
+              {locationConflict
+                ? "Delivery location changed"
+                : !selectedLocationId
+                  ? "Select a delivery location"
+                  : loadError
+                    ? "Unable to load addresses"
+                    : "No addresses in this location"}
             </Text>
 
             <Text style={styles.emptyText}>
-              Add your delivery address to receive groceries
-              at your doorstep.
+              {locationConflict
+                ? "Return to checkout and reopen address selection."
+                : !selectedLocationId
+                  ? "Choose an available delivery area before selecting an address."
+                  : loadError
+                    ? loadError
+                    : "Add a new address in your selected delivery area."}
             </Text>
           </View>
         ) : (
-          addresses.map((address) => {
+          /* SAVED ADDRESS LIST */
+
+          availableAddresses.map((item) => {
             const isSelected =
-              String(address.id) === String(selectedId);
+              validId(item.id) === validId(selectedId);
 
             return (
-              <Pressable
-                key={address.id}
-                onPress={() => setSelectedId(address.id)}
-                style={({ pressed }) => [
-                  styles.addressWrapper,
-                  isSelected &&
-                    styles.addressWrapperSelected,
-                  pressed && styles.addressPressed,
-                ]}
-              >
-                {isSelected && (
-                  <View style={styles.selectedTopLine} />
-                )}
-
-                {/* ORIGINAL ADDRESS COMPONENT */}
-                <AddressCard
-                  address={address}
-                  selected={isSelected}
-                  onChange={() => editAddress(address)}
-                />
-
-                {/* PREMIUM SELECTION FOOTER */}
-                <View style={styles.addressFooter}>
-                  <View style={styles.addressFooterLeft}>
-                    <View
-                      style={[
-                        styles.radioOuter,
-                        isSelected &&
-                          styles.radioOuterSelected,
-                      ]}
-                    >
-                      {isSelected && (
-                        <View style={styles.radioInner} />
-                      )}
-                    </View>
-
-                    <Text
-                      style={[
-                        styles.selectLabel,
-                        isSelected &&
-                          styles.selectLabelActive,
-                      ]}
-                    >
-                      {isSelected
-                        ? "Selected delivery address"
-                        : "Tap to select this address"}
-                    </Text>
-                  </View>
-
-                  {isSelected && (
-                    <View style={styles.selectedPill}>
-                      <Ionicons
-                        name="checkmark"
-                        size={12}
-                        color={PREMIUM.white}
-                      />
-
-                      <Text style={styles.selectedPillText}>
-                        SELECTED
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </Pressable>
+               <Pressable
+                 key={String(item.id)}
+                 onPress={() => setSelectedId(item.id)}
+                 style={({ pressed }) => [
+                   styles.addressWrapper,
+                   isSelected && styles.addressWrapperSelected,
+                   pressed && styles.pressed,
+                 ]}
+                 accessibilityRole="radio"
+                 accessibilityState={{ selected: isSelected }}
+               >
+                 <View style={styles.addressMainRow}>
+                   <View style={[styles.addressTypeIcon, isSelected && styles.addressTypeIconSelected]}>
+                     <Ionicons
+                       name={String(item.type || "").toLowerCase() === "work" ? "business-outline" : "home-outline"}
+                       size={21}
+                       color={C.primary}
+                     />
+                   </View>
+                   <View style={styles.addressMainText}>
+                     <View style={styles.addressNameRow}>
+                       <Text style={styles.addressTypeText} numberOfLines={1}>
+                         {item.type || "Home"}
+                       </Text>
+                       {item.isDefault && (
+                         <View style={styles.defaultBadge}>
+                           <Text style={styles.defaultBadgeText}>DEFAULT</Text>
+                         </View>
+                       )}
+                     </View>
+                     <Text style={styles.addressName} numberOfLines={1}>
+                       {item.name || "Customer"}
+                     </Text>
+                   </View>
+                   <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                     {isSelected && <View style={styles.radioInner} />}
+                   </View>
+                 </View>
+                 <View style={styles.addressDetails}>
+                   <Ionicons name="location-outline" size={16} color={C.muted} />
+                   <Text style={styles.addressDetailText}>
+                     {[item.address, item.landmark, item.city, item.state, item.pincode]
+                       .filter(Boolean).join(", ") || "Address details unavailable"}
+                   </Text>
+                 </View>
+                 {!!(item.phone || item.mobile) && (
+                   <View style={styles.addressDetails}>
+                     <Ionicons name="call-outline" size={16} color={C.muted} />
+                     <Text style={styles.addressDetailText}>{item.phone || item.mobile}</Text>
+                   </View>
+                 )}
+                 <View style={styles.addressFooter}>
+                   <View style={styles.radioRow}>
+                     <Ionicons
+                       name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                       size={17}
+                       color={isSelected ? C.primary : C.muted}
+                     />
+                     <Text style={[styles.selectLabel, isSelected && styles.selectLabelActive]}>
+                       {isSelected ? "Selected delivery address" : "Tap to select this address"}
+                     </Text>
+                   </View>
+                   <Pressable
+                     onPress={(event) => {
+                       event.stopPropagation?.();
+                       editAddress(item);
+                     }}
+                     style={styles.editAddressButton}
+                     accessibilityRole="button"
+                     accessibilityLabel="Edit address"
+                   >
+                     <Ionicons name="create-outline" size={16} color={C.primary} />
+                     <Text style={styles.editAddressText}>Edit</Text>
+                   </Pressable>
+                 </View>
+               </Pressable>
             );
           })
         )}
 
-        {/* ORIGINAL ADD NEW ADDRESS ACTION */}
+        {/* ADD NEW ADDRESS */}
+
         <Pressable
+          onPress={addNewAddress}
           style={({ pressed }) => [
             styles.addAddress,
             pressed && styles.pressed,
           ]}
-          onPress={addNewAddress}
         >
           <View style={styles.addIcon}>
             <Ionicons
               name="add"
-              size={23}
-              color={PREMIUM.primary}
+              size={24}
+              color={C.primary}
             />
           </View>
 
-          <View style={styles.addContent}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.addTitle}>
               Add a new address
             </Text>
 
             <Text style={styles.addSubtitle}>
-              Add another delivery location
+              Add another delivery address
             </Text>
           </View>
 
-          <View style={styles.arrowBox}>
-            <Ionicons
-              name="chevron-forward"
-              size={17}
-              color={PREMIUM.primary}
-            />
-          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={C.primary}
+          />
         </Pressable>
 
-        {/* INFORMATION CARD */}
+        {/* INFORMATION */}
+
         <View style={styles.infoCard}>
-          <View style={styles.infoIcon}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={18}
-              color={PREMIUM.primary}
-            />
-          </View>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={20}
+            color={C.primary}
+          />
 
           <Text style={styles.infoText}>
-            Your delivery address helps us bring your
-            groceries to the right doorstep.
+            Your delivery address helps us bring
+            your groceries to the right doorstep.
           </Text>
         </View>
       </ScrollView>
 
-      {/* ORIGINAL SELECTED ADDRESS BOTTOM BAR */}
-      {selected && (
+      {/* FIXED BOTTOM BAR */}
+
+      {!!selected && (
         <View
           style={[
             styles.bottomBar,
@@ -417,21 +584,21 @@ export default function AddressScreen() {
           ]}
         >
           <View style={styles.bottomAddress}>
-            <View style={styles.bottomLocationIcon}>
+            <View style={styles.bottomIcon}>
               <Ionicons
                 name="location"
-                size={17}
-                color={PREMIUM.primary}
+                size={18}
+                color={C.primary}
               />
             </View>
 
-            <View style={styles.bottomAddressInfo}>
-              <Text style={styles.bottomAddressLabel}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bottomLabel}>
                 Delivering to
               </Text>
 
               <Text
-                style={styles.bottomAddressText}
+                style={styles.bottomText}
                 numberOfLines={1}
               >
                 {selected.type} • {selected.name}
@@ -440,23 +607,34 @@ export default function AddressScreen() {
           </View>
 
           <Pressable
+            disabled={saving}
             onPress={confirm}
             style={({ pressed }) => [
-              styles.confirm,
-              pressed && styles.confirmPressed,
+              styles.confirmButton,
+              pressed && styles.pressed,
+              saving && { opacity: 0.65 },
             ]}
           >
-            <Text style={styles.confirmText}>
-              Deliver Here
-            </Text>
-
-            <View style={styles.confirmIcon}>
-              <Ionicons
-                name="arrow-forward"
-                size={17}
-                color={PREMIUM.primary}
+            {saving ? (
+              <ActivityIndicator
+                size="small"
+                color={C.white}
               />
-            </View>
+            ) : (
+              <>
+                <Text style={styles.confirmText}>
+                  Deliver Here
+                </Text>
+
+                <View style={styles.confirmArrow}>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color={C.primary}
+                  />
+                </View>
+              </>
+            )}
           </Pressable>
         </View>
       )}
@@ -464,577 +642,309 @@ export default function AddressScreen() {
   );
 }
 
+/* =========================================
+   PREMIUM STYLES
+========================================= */
+
 const styles = StyleSheet.create({
-  // PAGE
   container: {
     flex: 1,
-    backgroundColor: PREMIUM.background,
+    backgroundColor: C.background,
   },
-
-  scrollView: {
-    flex: 1,
-  },
-
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 17,
-  },
-
-  // PREMIUM FIXED HEADER
-  headerBackground: {
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 18,
-    paddingBottom: 21,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
-    zIndex: 10,
-    elevation: 4,
-  },
-
-  headerCircleOne: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.055)",
-    right: -95,
-    top: -110,
-  },
-
-  headerCircleTwo: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.045)",
-    left: -65,
-    bottom: -60,
-  },
-
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
+   header: {
+     backgroundColor: C.white,
+     paddingHorizontal: 15,
+     paddingBottom: 13,
+     borderBottomWidth: 1,
+     borderBottomColor: C.border,
+   },
+   headerRow: { flexDirection: "row", alignItems: "center" },
+   backButton: {
+     width: 43, height: 43, borderRadius: 14,
+     backgroundColor: C.soft, alignItems: "center", justifyContent: "center",
+   },
+   headerCenter: {
+     flex: 1, minWidth: 0, alignItems: "flex-start", paddingHorizontal: 12,
+   },
+   headerTitle: { color: C.navy, fontSize: 18, fontWeight: "900", letterSpacing: -0.3 },
+   headerSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 },
+   headerTrailing: {
+     width: 43, height: 43, borderRadius: 14,
+     backgroundColor: C.soft, alignItems: "center", justifyContent: "center",
+   },
+  intro: {
+    margin: 16,
+    padding: 16,
     borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.17)",
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-
-  headerTitle: {
-    color: PREMIUM.white,
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  headerSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    fontWeight: "500",
-    marginTop: 4,
-  },
-
-  headerSpacer: {
-    width: 44,
-    height: 44,
-  },
-
-  headerInfo: {
-    marginTop: 19,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 19,
+    borderColor: C.border,
     flexDirection: "row",
     alignItems: "center",
+    gap: 13,
   },
-
-  headerInfoIcon: {
-    width: 41,
-    height: 41,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 11,
-  },
-
-  headerInfoContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  headerInfoTitle: {
-    color: PREMIUM.white,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  headerInfoSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  headerInfoBadge: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.17)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-
-  // INTRO CARD
-  heading: {
-    backgroundColor: PREMIUM.white,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 22,
-    shadowColor: "#7A2949",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-
-  headingIcon: {
+  introIcon: {
     width: 49,
     height: 49,
-    borderRadius: 25,
-    backgroundColor: PREMIUM.pinkSoft,
+    borderRadius: 17,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  headingContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  title: {
-    color: PREMIUM.navy,
+  introTitle: {
+    color: C.navy,
     fontSize: 16,
     fontWeight: "900",
-    letterSpacing: -0.2,
   },
-
-  subtitle: {
-    color: PREMIUM.muted,
-    fontSize: 10.5,
-    lineHeight: 16,
+  introSubtitle: {
+    color: C.muted,
+    fontSize: 11,
+    lineHeight: 17,
     marginTop: 5,
   },
-
-  // SECTION HEADING
-  sectionHeader: {
+  sectionRow: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 14,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 13,
-    paddingHorizontal: 2,
+    gap: 11,
   },
-
-  sectionHeadingLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
   sectionAccent: {
     width: 4,
-    height: 35,
-    borderRadius: 3,
-    backgroundColor: PREMIUM.primary,
-    marginRight: 10,
+    height: 36,
+    borderRadius: 4,
+    backgroundColor: C.primary,
   },
-
   sectionTitle: {
-    color: PREMIUM.navy,
-    fontSize: 15,
+    color: C.navy,
+    fontSize: 17,
     fontWeight: "900",
   },
-
   sectionSubtitle: {
-    color: PREMIUM.muted,
-    fontSize: 9.5,
+    color: C.muted,
+    fontSize: 10,
     marginTop: 4,
   },
-
-  savedBadge: {
+  countBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: PREMIUM.pinkSoft,
-    borderRadius: 18,
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: C.soft,
   },
-
-  savedBadgeText: {
-    color: PREMIUM.primary,
-    fontSize: 8,
+  countText: {
+    color: C.primary,
+    fontSize: 10,
     fontWeight: "900",
-    marginLeft: 5,
   },
-
-  // LOADING
   loadingBox: {
-    paddingVertical: 55,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PREMIUM.white,
+    marginHorizontal: 16,
+    paddingVertical: 48,
     borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    marginBottom: 13,
+    backgroundColor: C.white,
+    alignItems: "center",
+    gap: 12,
   },
-
   loadingText: {
-    color: PREMIUM.muted,
-    fontSize: 11,
-    marginTop: 12,
-    fontWeight: "600",
+    color: C.muted,
+    fontSize: 12,
   },
-
-  // EMPTY
   emptyBox: {
-    paddingVertical: 36,
-    paddingHorizontal: 25,
-    alignItems: "center",
-    backgroundColor: PREMIUM.white,
+    marginHorizontal: 16,
+    padding: 28,
     borderRadius: 22,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.border,
-    marginBottom: 13,
-  },
-
-  emptyIconOuter: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
-    backgroundColor: PREMIUM.pinkSoft,
+    borderColor: C.border,
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 15,
   },
-
   emptyIcon: {
-    width: 69,
-    height: 69,
-    borderRadius: 35,
-    backgroundColor: PREMIUM.white,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 16,
   },
-
   emptyTitle: {
-    color: PREMIUM.navy,
+    color: C.navy,
     fontSize: 16,
     fontWeight: "900",
     textAlign: "center",
   },
-
   emptyText: {
-    color: PREMIUM.muted,
-    fontSize: 11,
-    lineHeight: 18,
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
     textAlign: "center",
-    marginTop: 8,
+    marginTop: 9,
   },
-
-  // ADDRESS CARDS
-  addressWrapper: {
-    backgroundColor: PREMIUM.white,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PREMIUM.border,
-    overflow: "hidden",
-    marginBottom: 13,
-    shadowColor: "#7A2949",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.035,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-
-  addressWrapperSelected: {
-    borderColor: PREMIUM.primary,
-    borderWidth: 1.5,
-    shadowColor: PREMIUM.primary,
-    shadowOpacity: 0.09,
-    elevation: 3,
-  },
-
-  addressPressed: {
-    opacity: 0.88,
-  },
-
-  selectedTopLine: {
-    height: 4,
-    backgroundColor: PREMIUM.primary,
-  },
-
-  addressFooter: {
-    minHeight: 43,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderTopWidth: 1,
-    borderTopColor: PREMIUM.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  addressFooterLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-
-  radioOuter: {
-    width: 21,
-    height: 21,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: "#D9CDD3",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-
-  radioOuterSelected: {
-    borderColor: PREMIUM.primary,
-  },
-
-  radioInner: {
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    backgroundColor: PREMIUM.primary,
-  },
-
-  selectLabel: {
-    color: PREMIUM.muted,
-    fontSize: 10,
-    fontWeight: "700",
-  },
-
-  selectLabelActive: {
-    color: PREMIUM.primary,
-    fontWeight: "900",
-  },
-
-  selectedPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: PREMIUM.primary,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-
-  selectedPillText: {
-    color: PREMIUM.white,
-    fontSize: 8,
-    fontWeight: "900",
-    marginLeft: 4,
-  },
-
-  // ADD ADDRESS BUTTON
+   addressWrapper: {
+     marginHorizontal: 16,
+     marginBottom: 12,
+     padding: 15,
+     borderRadius: 16,
+     backgroundColor: C.white,
+     borderWidth: 1,
+     borderColor: C.border,
+   },
+   addressWrapperSelected: {
+     borderColor: C.primary,
+     backgroundColor: C.white,
+   },
+   addressMainRow: { flexDirection: "row", alignItems: "center", gap: 11 },
+   addressTypeIcon: {
+     width: 43, height: 43, borderRadius: 12,
+     backgroundColor: C.soft, alignItems: "center", justifyContent: "center",
+   },
+   addressTypeIconSelected: { backgroundColor: C.soft },
+   addressMainText: { flex: 1, minWidth: 0 },
+   addressNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+   addressTypeText: { color: C.navy, fontSize: 14, fontWeight: "800" },
+   addressName: { color: C.muted, fontSize: 12, marginTop: 4 },
+   defaultBadge: {
+     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5, backgroundColor: C.soft,
+   },
+   defaultBadgeText: { color: C.primary, fontSize: 9, fontWeight: "800" },
+   addressDetails: {
+     flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 12,
+   },
+   addressDetailText: { flex: 1, color: C.navy, fontSize: 12, lineHeight: 19 },
+   addressFooter: {
+     marginTop: 14, paddingTop: 12,
+     borderTopWidth: 1, borderTopColor: C.border,
+     flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
+   },
+   radioRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 7 },
+   radioOuter: {
+     width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+     borderColor: "#C6C8CE", alignItems: "center", justifyContent: "center",
+   },
+   radioOuterSelected: { borderColor: C.primary },
+   radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.primary },
+   selectLabel: { color: C.muted, fontSize: 11, fontWeight: "600" },
+   selectLabelActive: { color: C.primary },
+   editAddressButton: {
+     flexDirection: "row", alignItems: "center", gap: 5,
+     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, backgroundColor: C.soft,
+   },
+   editAddressText: { color: C.primary, fontSize: 11, fontWeight: "800" },
   addAddress: {
-    minHeight: 77,
-    padding: 13,
+    marginHorizontal: 16,
+    marginTop: 6,
+    padding: 16,
+    minHeight: 80,
     borderRadius: 22,
-    backgroundColor: PREMIUM.white,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
+    borderColor: C.border,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 13,
+    gap: 12,
   },
-
   addIcon: {
-    width: 47,
-    height: 47,
-    borderRadius: 24,
-    backgroundColor: PREMIUM.pinkSoft,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  addContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
   addTitle: {
-    color: PREMIUM.navy,
-    fontSize: 13,
+    color: C.navy,
+    fontSize: 14,
     fontWeight: "900",
   },
-
   addSubtitle: {
-    color: PREMIUM.muted,
-    fontSize: 10,
+    color: C.muted,
+    fontSize: 11,
     marginTop: 5,
   },
-
-  arrowBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: PREMIUM.pinkSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  pressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
-  },
-
-  // INFO CARD
   infoCard: {
-    padding: 13,
-    borderRadius: 19,
-    backgroundColor: PREMIUM.pinkSoft,
-    borderWidth: 1,
-    borderColor: PREMIUM.pinkLight,
+    marginHorizontal: 16,
+    marginTop: 17,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: C.soft,
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 2,
+    gap: 11,
   },
-
-  infoIcon: {
+  infoText: {
+    flex: 1,
+    color: C.dark,
+    fontSize: 11,
+    lineHeight: 18,
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 13,
+    backgroundColor: C.white,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    elevation: 12,
+  },
+  bottomAddress: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  bottomIcon: {
     width: 37,
     height: 37,
     borderRadius: 19,
-    backgroundColor: PREMIUM.white,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-
-  infoText: {
-    flex: 1,
-    color: PREMIUM.gray,
-    fontSize: 10.5,
-    lineHeight: 16,
-  },
-
-  // FIXED BOTTOM BAR
-  bottomBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: PREMIUM.white,
-    borderTopWidth: 1,
-    borderTopColor: PREMIUM.border,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    elevation: 12,
-    shadowColor: PREMIUM.navy,
-    shadowOffset: {
-      width: 0,
-      height: -3,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-  },
-
-  bottomAddress: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 10,
-  },
-
-  bottomLocationIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: PREMIUM.pinkSoft,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  bottomAddressInfo: {
-    flex: 1,
-    marginLeft: 9,
+  bottomLabel: {
+    color: C.muted,
+    fontSize: 10,
   },
-
-  bottomAddressLabel: {
-    color: PREMIUM.muted,
-    fontSize: 9,
-    fontWeight: "700",
-  },
-
-  bottomAddressText: {
-    color: PREMIUM.navy,
-    fontSize: 11,
+  bottomText: {
+    color: C.navy,
+    fontSize: 12,
     fontWeight: "900",
-    marginTop: 3,
+    marginTop: 4,
   },
-
-  confirm: {
-    height: 52,
-    minWidth: 150,
-    paddingLeft: 19,
-    paddingRight: 7,
-    borderRadius: 27,
-    backgroundColor: PREMIUM.primary,
+  confirmButton: {
+    minWidth: 148,
+    height: 51,
+    paddingHorizontal: 14,
+    borderRadius: 26,
+    backgroundColor: C.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 9,
   },
-
   confirmText: {
-    color: PREMIUM.white,
+    color: C.white,
     fontSize: 12,
     fontWeight: "900",
   },
-
-  confirmIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: PREMIUM.white,
+  confirmArrow: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  confirmPressed: {
-    opacity: 0.88,
-    transform: [{ scale: 0.98 }],
+  pressed: {
+    opacity: 0.82,
   },
 });

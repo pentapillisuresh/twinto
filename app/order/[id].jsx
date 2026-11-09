@@ -82,18 +82,33 @@ const money = (value) =>
 
 const upper = (value) => String(value || "").toUpperCase();
 
+function normalizeOrderStatus(value) {
+  const status = upper(value).trim().replace(/[\s-]+/g, "_");
+  if (["DELIVERED", "COMPLETED"].includes(status)) return "DELIVERED";
+  if (["OUT_FOR_DELIVERY", "OUT_FOR_DELIVERY_PARTNER", "SHIPPED", "DISPATCHED", "ON_THE_WAY"].includes(status)) return "OUT_FOR_DELIVERY";
+  if (["PACKING", "PREPARING", "PROCESSING", "BEING_PREPARED", "PACKED"].includes(status)) return "PACKING";
+  if (["CANCELLED", "CANCELED"].includes(status)) return "CANCELLED";
+  if (["CONFIRMED", "ACCEPTED"].includes(status)) return "CONFIRMED";
+  return status || "PLACED";
+}
+
 function getStepIndex(status) {
-  switch (upper(status)) {
-    case "DELIVERED":
-      return 3;
-    case "OUT_FOR_DELIVERY":
-      return 2;
-    case "PACKING":
-      return 1;
-    case "CONFIRMED":
-    case "PLACED":
-    default:
-      return 0;
+  switch (normalizeOrderStatus(status)) {
+    case "DELIVERED": return 3;
+    case "OUT_FOR_DELIVERY": return 2;
+    case "PACKING": return 1;
+    default: return 0;
+  }
+}
+
+function orderStatusLabel(status) {
+  switch (normalizeOrderStatus(status)) {
+    case "DELIVERED": return "Order Delivered";
+    case "OUT_FOR_DELIVERY": return "Out for Delivery";
+    case "PACKING": return "Preparing Your Order";
+    case "CANCELLED": return "Order Cancelled";
+    case "CONFIRMED": return "Order Confirmed";
+    default: return "Order Placed";
   }
 }
 
@@ -124,6 +139,7 @@ function getPaymentState(data) {
   const value = upper(
     data?.paymentStatus ||
       data?.order?.paymentStatus ||
+      data?.payment?.status ||
       data?.status
   );
 
@@ -404,10 +420,14 @@ export default function OrderTracking() {
   const isCashfree = paymentMethod === "CASHFREE";
   const isCOD = paymentMethod === "COD";
 
-  const paymentStatus = getPaymentState(order);
+  const paymentStatus = getPaymentState({
+    paymentStatus: order?.paymentStatus || order?.payment?.status,
+  });
   const isPaid = paymentStatus === "PAID";
 
-  const rawStatus = upper(order?.rawStatus || "PLACED");
+  const rawStatus = normalizeOrderStatus(
+    order?.rawStatus || order?.status || order?.orderStatus || "PLACED"
+  );
   const isCancelled = rawStatus === "CANCELLED";
   const isDelivered = rawStatus === "DELIVERED";
   const currentStep = getStepIndex(rawStatus);
@@ -439,24 +459,19 @@ export default function OrderTracking() {
       : 0;
 
   const header = (subtitle = "", showRefresh = true) => (
-    <View style={[styles.header, { paddingTop: topInset + 14 }]}>
-      <View style={styles.headerCircle} />
-
+    <View style={[styles.header, { paddingTop: topInset + 10 }]}>
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => router.back()}
           style={styles.headerButton}
+          accessibilityLabel="Go back"
         >
-          <Ionicons
-            name="chevron-back"
-            size={22}
-            color={C.white}
-          />
+          <Ionicons name="arrow-back" size={22} color={C.navy} />
         </Pressable>
 
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Order Details</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
             {subtitle || "Track your order"}
           </Text>
         </View>
@@ -466,46 +481,18 @@ export default function OrderTracking() {
             style={styles.headerButton}
             onPress={onRefresh}
             disabled={refreshing || verifying}
+            accessibilityLabel="Refresh order status"
           >
             {refreshing ? (
-              <ActivityIndicator color={C.white} size="small" />
+              <ActivityIndicator color={C.primary} size="small" />
             ) : (
-              <Ionicons
-                name="refresh"
-                size={20}
-                color={C.white}
-              />
+              <Ionicons name="refresh" size={20} color={C.primary} />
             )}
           </Pressable>
         ) : (
           <View style={{ width: 44 }} />
         )}
       </View>
-
-      {!!subtitle && (
-        <View style={styles.headerSummary}>
-          <View style={styles.headerSummaryIcon}>
-            <Ionicons
-              name="receipt-outline"
-              size={20}
-              color="#FFE0A8"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerSummaryLabel}>
-              YOUR ORDER
-            </Text>
-            <Text style={styles.headerSummaryNumber}>
-              #{orderNumber}
-            </Text>
-          </View>
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={23}
-            color={C.white}
-          />
-        </View>
-      )}
     </View>
   );
 
@@ -517,8 +504,8 @@ export default function OrderTracking() {
     return (
       <View style={styles.safeArea}>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={C.primary}
+          barStyle="dark-content"
+          backgroundColor={C.white}
         />
         {header("", false)}
         <View style={styles.centered}>
@@ -547,8 +534,8 @@ export default function OrderTracking() {
     return (
       <View style={styles.safeArea}>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={C.primary}
+          barStyle="dark-content"
+          backgroundColor={C.white}
         />
         {header("", false)}
         <View style={styles.centered}>
@@ -590,8 +577,8 @@ export default function OrderTracking() {
   return (
     <View style={styles.safeArea}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={C.primary}
+        barStyle="dark-content"
+        backgroundColor={C.white}
         translucent={
           Platform.OS === "android" &&
           Platform.Version >= 35
@@ -651,7 +638,7 @@ export default function OrderTracking() {
               ? "Order Cancelled"
               : isDelivered
               ? "Order Delivered"
-              : order.status || "Order Placed"}
+              : orderStatusLabel(rawStatus)}
           </Text>
 
           <Text style={styles.heroDescription}>
@@ -1260,22 +1247,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   header: {
-    backgroundColor: C.primary,
-    paddingHorizontal: 17,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
-    elevation: 4,
-  },
-  headerCircle: {
-    position: "absolute",
-    right: -75,
-    top: -95,
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: C.white,
+    paddingHorizontal: 16,
+    paddingBottom: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    zIndex: 10,
   },
   headerRow: {
     flexDirection: "row",
@@ -1284,58 +1261,25 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderRadius: 14,
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
   },
   headerCenter: {
     flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
+    alignItems: "flex-start",
+    paddingHorizontal: 13,
   },
   headerTitle: {
-    color: C.white,
-    fontSize: 17,
+    color: C.navy,
+    fontSize: 18,
     fontWeight: "900",
   },
   headerSubtitle: {
-    color: "#FFE0EB",
-    fontSize: 10,
-    marginTop: 4,
-  },
-  headerSummary: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 20,
-    padding: 13,
-    marginTop: 18,
-  },
-  headerSummaryIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  headerSummaryLabel: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#FFE0EB",
-    letterSpacing: 1,
-  },
-  headerSummaryNumber: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: C.white,
-    marginTop: 4,
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 3,
   },
   content: {
     paddingHorizontal: 16,

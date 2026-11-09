@@ -1,3 +1,4 @@
+
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform } from "react-native";
@@ -31,8 +32,7 @@ export default function TabsLayout() {
           PREMIUM.muted,
 
         tabBarStyle: {
-          height:
-            64 + insets.bottom,
+          height: 64 + insets.bottom,
 
           paddingTop: 8,
 
@@ -145,10 +145,10 @@ export default function TabsLayout() {
           /*
            * CART NUMBER
            *
-           * 0  = no badge
-           * 1  = 1
-           * 2  = 2
-           * 10 = 10
+           * 0   = no badge
+           * 1   = 1
+           * 2   = 2
+           * 10  = 10
            * 100 = 99+
            */
 

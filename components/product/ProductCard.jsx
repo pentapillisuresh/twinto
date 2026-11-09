@@ -1,5 +1,6 @@
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
 import {
   Image,
   Pressable,
@@ -10,8 +11,10 @@ import {
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+
 import { useCart } from "../../context";
 import { getImageUrl } from "../../utils/imageUrl";
+import { useFlyToCart } from "../cart/FlyToCart";
 
 const COLORS = {
   primary: "#C9004F",
@@ -23,11 +26,18 @@ const COLORS = {
   textSecondary: "#59606D",
   muted: "#858B95",
   border: "#E7DCE2",
-  imageBackground: "#F4F1EA",
+  imageBackground: "#F8F5F5",
 };
 
-export default function ProductCard({ product, item }) {
+export default function ProductCard({
+  product,
+  item,
+}) {
   const router = useRouter();
+
+  const imageRef = useRef(null);
+
+  const flyToCart = useFlyToCart();
 
   const {
     cart = [],
@@ -38,7 +48,8 @@ export default function ProductCard({ product, item }) {
 
   const currentProduct = product || item;
 
-  const [imageFailed, setImageFailed] = useState(false);
+  const [imageFailed, setImageFailed] =
+    useState(false);
 
   if (!currentProduct) return null;
 
@@ -47,30 +58,112 @@ export default function ProductCard({ product, item }) {
 
     const cid = c.id ?? c.product?.id;
 
-    return String(cid) === String(currentProduct.id);
+    return (
+      String(cid) ===
+      String(currentProduct.id)
+    );
   });
 
-  const quantity = Number(cartItem?.quantity) || 0;
+  const quantity =
+    Number(cartItem?.quantity) || 0;
 
-  // Convert localhost URLs into the Android-accessible backend URL.
   const imageUrl = getImageUrl(
     currentProduct.image ||
       currentProduct.imageUrl ||
       currentProduct.image_url
   );
 
+  const price =
+    Number(currentProduct.price) || 0;
+
+  const mrp =
+    Number(currentProduct.mrp) || 0;
+
+  const discount =
+    mrp > price && mrp > 0
+      ? Math.round(
+          ((mrp - price) / mrp) * 100
+        )
+      : Number(currentProduct.discount) || 0;
+
+  const productUnit =
+    currentProduct.weight ||
+    currentProduct.unit ||
+    "";
+
+  const deliveryTime =
+    currentProduct.delivery || "15 mins";
+
+  const formatPrice = (value) =>
+    Number(value).toLocaleString("en-IN", {
+      maximumFractionDigits: 2,
+    });
+
+  // Animate from the product image to the Cart tab.
+  const animateProductToCart = () => {
+    if (
+      !imageUrl ||
+      imageFailed ||
+      typeof flyToCart !== "function"
+    ) {
+      return;
+    }
+
+    imageRef.current?.measureInWindow(
+      (x, y, width, height) => {
+        if (!width || !height) return;
+
+        flyToCart({
+          imageUrl,
+          startX: x + width / 2,
+          startY: y + height / 2,
+          size: Math.min(width, height, 75),
+        });
+      }
+    );
+  };
+
+  const handleAdd = (event) => {
+    event?.stopPropagation?.();
+
+    animateProductToCart();
+
+    addToCart(currentProduct);
+  };
+
+  const handleIncrease = (event) => {
+    event?.stopPropagation?.();
+
+    animateProductToCart();
+
+    increase(currentProduct.id);
+  };
+
+  const handleDecrease = (event) => {
+    event?.stopPropagation?.();
+
+    decrease(currentProduct.id);
+  };
+
   return (
     <Pressable
-      onPress={() =>
-        router.push(`/product/${currentProduct.id}`)
-      }
       style={({ pressed }) => [
         styles.card,
         pressed && styles.cardPressed,
       ]}
+      onPress={() =>
+        router.push(
+          `/product/${currentProduct.id}`
+        )
+      }
     >
       {/* PRODUCT IMAGE */}
-      <View style={styles.imageCard}>
+
+      <View
+        ref={imageRef}
+        collapsable={false}
+        style={styles.imageContainer}
+      >
         {imageUrl && !imageFailed ? (
           <Image
             source={{ uri: imageUrl }}
@@ -97,52 +190,56 @@ export default function ProductCard({ product, item }) {
           <View style={styles.imagePlaceholder}>
             <Ionicons
               name="image-outline"
-              size={32}
+              size={28}
               color={COLORS.muted}
             />
           </View>
         )}
 
         {/* FAVORITE ICON */}
+
         <View style={styles.favoriteButton}>
           <Ionicons
             name="heart-outline"
-            size={18}
+            size={17}
             color={COLORS.white}
           />
         </View>
 
-        {/* ADD TO CART */}
+        {/* DISCOUNT BADGE */}
+
+        {discount > 0 && (
+          <View style={styles.discountBadge}>
+            <Text style={styles.discountText}>
+              {discount}% OFF
+            </Text>
+          </View>
+        )}
+
+        {/* ADD / QUANTITY */}
+
         {quantity === 0 ? (
           <Pressable
             style={({ pressed }) => [
               styles.addButton,
               pressed && styles.addButtonPressed,
             ]}
-            onPress={(event) => {
-              event.stopPropagation();
-              addToCart(currentProduct);
-            }}
+            onPress={handleAdd}
           >
-            <Ionicons
-              name="add"
-              size={22}
-              color={COLORS.primary}
-            />
+            <Text style={styles.addText}>
+              ADD
+            </Text>
           </Pressable>
         ) : (
           <View style={styles.quantityContainer}>
             <Pressable
               style={styles.quantityButton}
-              onPress={(event) => {
-                event.stopPropagation();
-                decrease(currentProduct.id);
-              }}
+              onPress={handleDecrease}
             >
               <Ionicons
                 name="remove"
-                size={14}
-                color={COLORS.primary}
+                size={15}
+                color={COLORS.white}
               />
             </Pressable>
 
@@ -152,79 +249,67 @@ export default function ProductCard({ product, item }) {
 
             <Pressable
               style={styles.quantityButton}
-              onPress={(event) => {
-                event.stopPropagation();
-                increase(currentProduct.id);
-              }}
+              onPress={handleIncrease}
             >
               <Ionicons
                 name="add"
-                size={14}
-                color={COLORS.primary}
+                size={15}
+                color={COLORS.white}
               />
             </Pressable>
           </View>
         )}
       </View>
 
-      {/* PRODUCT DETAILS */}
+      {/* PRODUCT INFORMATION */}
+
       <View style={styles.details}>
-        {currentProduct.discount > 0 && (
-          <View style={styles.discountBadge}>
-            <Text style={styles.discountText}>
-              {currentProduct.discount}% OFF
-            </Text>
-          </View>
-        )}
+        <View style={styles.deliveryBadge}>
+          <Ionicons
+            name="flash"
+            size={10}
+            color={COLORS.primary}
+          />
 
-        {/* PRICE */}
-        <View style={styles.priceRow}>
-          <Text style={styles.price}>
-            ₹{currentProduct.price}
+          <Text
+            style={styles.deliveryText}
+            numberOfLines={1}
+          >
+            {deliveryTime}
           </Text>
-
-          {currentProduct.mrp > currentProduct.price && (
-            <Text style={styles.mrp}>
-              ₹{currentProduct.mrp}
-            </Text>
-          )}
         </View>
 
-        {/* CATEGORY */}
         <Text
-          style={styles.category}
-          numberOfLines={1}
-        >
-          {currentProduct.category}
-        </Text>
-
-        {/* NAME */}
-        <Text
-          style={styles.name}
+          style={styles.productName}
           numberOfLines={2}
+          ellipsizeMode="tail"
         >
           {currentProduct.name}
         </Text>
 
-        {/* WEIGHT / UNIT */}
         <Text
-          style={styles.weight}
+          style={styles.unit}
           numberOfLines={1}
         >
-          {currentProduct.weight || currentProduct.unit}
+          {productUnit}
         </Text>
 
-        {/* DELIVERY */}
-        <View style={styles.deliveryRow}>
-          <Ionicons
-            name="flash"
-            size={11}
-            color={COLORS.primary}
-          />
-
-          <Text style={styles.delivery}>
-            {currentProduct.delivery || "15 mins"}
+        <View style={styles.priceRow}>
+          <Text
+            style={styles.price}
+            numberOfLines={1}
+          >
+            ₹{formatPrice(price)}
           </Text>
+
+          {mrp > price && (
+            <Text
+              style={styles.mrp}
+              numberOfLines={1}
+            >
+              ₹{formatPrice(mrp)}
+            </Text>
+          )}
         </View>
       </View>
     </Pressable>
@@ -233,32 +318,29 @@ export default function ProductCard({ product, item }) {
 
 const styles = StyleSheet.create({
   card: {
-    width: "31.5%",
+    width: "100%",
+    minWidth: 0,
     backgroundColor: "transparent",
-    marginBottom: 14,
+    marginBottom: 4,
   },
 
   cardPressed: {
-    transform: [{ scale: 0.97 }],
+    opacity: 0.85,
   },
 
-  imageCard: {
+  imageContainer: {
     width: "100%",
-    height: 108,
+    aspectRatio: 1,
     backgroundColor: COLORS.imageBackground,
-    borderRadius: 12,
+    borderRadius: 13,
     position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "visible",
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    marginBottom: 15,
   },
 
   productImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 11,
+    borderRadius: 13,
   },
 
   imagePlaceholder: {
@@ -270,94 +352,126 @@ const styles = StyleSheet.create({
 
   favoriteButton: {
     position: "absolute",
-    top: 7,
-    right: 7,
-    width: 27,
-    height: 27,
-    borderRadius: 14,
-    backgroundColor: "rgba(40,40,40,0.30)",
+    top: 6,
+    right: 6,
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    backgroundColor: "rgba(40,40,40,0.35)",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  addButton: {
-    position: "absolute",
-    right: 5,
-    bottom: -12,
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-  },
-
-  addButtonPressed: {
-    backgroundColor: COLORS.primaryLight,
-    transform: [{ scale: 0.9 }],
-  },
-
-  quantityContainer: {
-    position: "absolute",
-    right: 5,
-    bottom: -12,
-    height: 38,
-    minWidth: 70,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 2,
-    elevation: 4,
-  },
-
-  quantityButton: {
-    width: 23,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  quantity: {
-    minWidth: 18,
-    textAlign: "center",
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  details: {
-    paddingTop: 16,
-    paddingHorizontal: 3,
-    paddingBottom: 2,
   },
 
   discountBadge: {
-    alignSelf: "flex-start",
+    position: "absolute",
+    top: 0,
+    left: 0,
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-    marginBottom: 4,
+    borderTopLeftRadius: 12,
+    borderBottomRightRadius: 7,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
   },
 
   discountText: {
     color: COLORS.white,
     fontSize: 8,
-    lineHeight: 10,
     fontWeight: "900",
+  },
+
+  addButton: {
+    position: "absolute",
+    bottom: -12,
+    right: 5,
+    width: 57,
+    height: 30,
+    borderRadius: 7,
+    borderWidth: 1.2,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+  },
+
+  addButtonPressed: {
+    backgroundColor: COLORS.primaryLight,
+  },
+
+  addText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  quantityContainer: {
+    position: "absolute",
+    bottom: -12,
+    right: 3,
+    width: 78,
+    height: 30,
+    borderRadius: 7,
+    backgroundColor: COLORS.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    elevation: 2,
+  },
+
+  quantityButton: {
+    width: 25,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  quantity: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  details: {
+    paddingHorizontal: 2,
+  },
+
+  deliveryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#F3F0F2",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    marginBottom: 5,
+  },
+
+  deliveryText: {
+    color: COLORS.text,
+    fontSize: 9,
+    fontWeight: "800",
+    marginLeft: 2,
+  },
+
+  productName: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 15,
+    minHeight: 30,
+  },
+
+  unit: {
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 3,
   },
 
   priceRow: {
     flexDirection: "row",
-    alignItems: "baseline",
-    marginBottom: 2,
+    alignItems: "center",
+    marginTop: 6,
   },
 
   price: {
@@ -368,44 +482,9 @@ const styles = StyleSheet.create({
 
   mrp: {
     color: COLORS.muted,
-    fontSize: 8,
+    fontSize: 9,
     textDecorationLine: "line-through",
     marginLeft: 4,
-  },
-
-  category: {
-    color: COLORS.muted,
-    fontSize: 8,
-    fontWeight: "700",
-    marginTop: 1,
-  },
-
-  name: {
-    color: COLORS.text,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "800",
-    marginTop: 1,
-  },
-
-  weight: {
-    color: COLORS.primary,
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: "800",
-    marginTop: 2,
-  },
-
-  deliveryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
-
-  delivery: {
-    color: COLORS.textSecondary,
-    fontSize: 8,
-    fontWeight: "700",
-    marginLeft: 2,
+    flexShrink: 1,
   },
 });
