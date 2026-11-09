@@ -44,6 +44,7 @@ export default function ProductCard({
     addToCart,
     increase,
     decrease,
+    location,
   } = useCart();
 
   const currentProduct = product || item;
@@ -91,8 +92,13 @@ export default function ProductCard({
     currentProduct.unit ||
     "";
 
+  const rawDeliveryTime = location?.deliveryTime;
   const deliveryTime =
-    currentProduct.delivery || "15 mins";
+    rawDeliveryTime == null || String(rawDeliveryTime).trim() === ""
+      ? null
+      : /min|hour|hr/i.test(String(rawDeliveryTime))
+        ? String(rawDeliveryTime).trim()
+        : `${String(rawDeliveryTime).trim()} mins`;
 
   const formatPrice = (value) =>
     Number(value).toLocaleString("en-IN", {
@@ -264,6 +270,7 @@ export default function ProductCard({
       {/* PRODUCT INFORMATION */}
 
       <View style={styles.details}>
+        {deliveryTime ? (
         <View style={styles.deliveryBadge}>
           <Ionicons
             name="flash"
@@ -278,6 +285,7 @@ export default function ProductCard({
             {deliveryTime}
           </Text>
         </View>
+        ) : null}
 
         <Text
           style={styles.productName}

@@ -15,7 +15,6 @@ function normalizeProduct(p) {
     slug: p.slug,
     description: p.description || "",
 
-    // Convert localhost image URLs to the mobile-accessible backend URL.
     image: getImageUrl(
       p.image || p.imageUrl || p.image_url
     ),
@@ -39,7 +38,9 @@ function normalizeProduct(p) {
         ? Math.round(((mrp - price) / mrp) * 100)
         : 0,
 
-    delivery: "15 mins",
+    // Delivery time is determined by the selected location,
+    // not by the product.
+    delivery: null,
   };
 }
 

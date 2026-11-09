@@ -419,17 +419,17 @@ export default function Home() {
         </View>
       ) : visibleProducts.length > 0 ? (
         <View style={styles.grid}>
-          {visibleProducts.map((product) => (
-            <View
-              key={String(product.id)}
-              style={[
-                styles.productColumn,
-                { width: productWidth },
-              ]}
-            >
-              <ProductCard product={product} />
-            </View>
-          ))}
+      {visibleProducts.slice(0, 12).map((product) => (
+  <View
+    key={String(product.id)}
+    style={[
+      styles.productColumn,
+      { width: productWidth },
+    ]}
+  >
+    <ProductCard product={product} />
+  </View>
+))}
         </View>
       ) : (
         <View style={styles.empty}>
