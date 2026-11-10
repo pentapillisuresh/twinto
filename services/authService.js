@@ -42,9 +42,6 @@ function unwrapResponse(response) {
     );
   }
 
-  // Your backend may return:
-  // { success: true, message: "...", data: {...} }
-  // or apiRequest may already return the data object.
   return response.data ?? response;
 }
 
@@ -91,7 +88,7 @@ export async function verifyOtp(mobile, otp, name) {
     otp: code,
   };
 
-  // Optional customer name for first-time registration
+  // Optional customer name
   if (typeof name === "string" && name.trim()) {
     body.name = name.trim().slice(0, 100);
   }
@@ -112,6 +109,14 @@ export async function verifyOtp(mobile, otp, name) {
   return {
     token: data.token,
     user: data.user,
+
+    // Used to open name setup after OTP verification.
+    needsProfileSetup:
+      data.needsProfileSetup ??
+      (
+        !data.user?.name ||
+        data.user.name.trim().toLowerCase() === "customer"
+      ),
   };
 }
 
@@ -164,4 +169,62 @@ export async function adminLogin(email, password) {
     token: data.token,
     user: data.user,
   };
+}
+
+// ==========================================
+// COMPLETE PROFILE AFTER OTP
+// PUT /api/v1/auth/complete-profile
+// ==========================================
+
+export async function completeProfile(name) {
+  const cleaned = String(name ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (cleaned.length < 2 || cleaned.length > 120) {
+    throw new Error(
+      "Name must be between 2 and 120 characters."
+    );
+  }
+
+  const response = await apiRequest(
+    "/auth/complete-profile",
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: cleaned,
+      }),
+    }
+  );
+
+  return unwrapResponse(response);
+}
+
+// ==========================================
+// UPDATE EXISTING CUSTOMER PROFILE
+// PUT /api/v1/auth/profile
+// ==========================================
+
+export async function updateProfile(name) {
+  const cleaned = String(name ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (cleaned.length < 2 || cleaned.length > 120) {
+    throw new Error(
+      "Name must be between 2 and 120 characters."
+    );
+  }
+
+  const response = await apiRequest(
+    "/auth/profile",
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: cleaned,
+      }),
+    }
+  );
+
+  return unwrapResponse(response);
 }

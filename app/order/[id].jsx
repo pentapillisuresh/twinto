@@ -54,26 +54,20 @@ const STEPS = [
   {
     key: "PLACED",
     title: "Order Placed",
-    description: "We have received your order",
-    icon: "checkmark",
+    description: "Your order has been received successfully.",
+    icon: "receipt-outline",
   },
   {
-    key: "PACKING",
+    key: "PREPARING",
     title: "Preparing Your Order",
-    description: "Your groceries are being packed",
-    icon: "cube-outline",
-  },
-  {
-    key: "OUT_FOR_DELIVERY",
-    title: "Out for Delivery",
-    description: "Your delivery partner is on the way",
-    icon: "bicycle-outline",
+    description: "Your groceries are being prepared for delivery.",
+    icon: "basket-outline",
   },
   {
     key: "DELIVERED",
     title: "Delivered",
-    description: "Enjoy your fresh groceries",
-    icon: "home-outline",
+    description: "Your order has been delivered successfully.",
+    icon: "checkmark-done-outline",
   },
 ];
 
@@ -85,18 +79,19 @@ const upper = (value) => String(value || "").toUpperCase();
 function normalizeOrderStatus(value) {
   const status = upper(value).trim().replace(/[\s-]+/g, "_");
   if (["DELIVERED", "COMPLETED"].includes(status)) return "DELIVERED";
-  if (["OUT_FOR_DELIVERY", "OUT_FOR_DELIVERY_PARTNER", "SHIPPED", "DISPATCHED", "ON_THE_WAY"].includes(status)) return "OUT_FOR_DELIVERY";
-  if (["PACKING", "PREPARING", "PROCESSING", "BEING_PREPARED", "PACKED"].includes(status)) return "PACKING";
   if (["CANCELLED", "CANCELED"].includes(status)) return "CANCELLED";
-  if (["CONFIRMED", "ACCEPTED"].includes(status)) return "CONFIRMED";
-  return status || "PLACED";
+  if ([
+    "PREPARING", "CONFIRMED", "ACCEPTED", "PACKING", "PACKED",
+    "PROCESSING", "BEING_PREPARED", "OUT_FOR_DELIVERY",
+    "OUT_FOR_DELIVERY_PARTNER", "SHIPPED", "DISPATCHED", "ON_THE_WAY",
+  ].includes(status)) return "PREPARING";
+  return "PLACED";
 }
 
 function getStepIndex(status) {
   switch (normalizeOrderStatus(status)) {
-    case "DELIVERED": return 3;
-    case "OUT_FOR_DELIVERY": return 2;
-    case "PACKING": return 1;
+    case "DELIVERED": return 2;
+    case "PREPARING": return 1;
     default: return 0;
   }
 }
@@ -104,12 +99,40 @@ function getStepIndex(status) {
 function orderStatusLabel(status) {
   switch (normalizeOrderStatus(status)) {
     case "DELIVERED": return "Order Delivered";
-    case "OUT_FOR_DELIVERY": return "Out for Delivery";
-    case "PACKING": return "Preparing Your Order";
+    case "PREPARING": return "Preparing Your Order";
     case "CANCELLED": return "Order Cancelled";
-    case "CONFIRMED": return "Order Confirmed";
     default: return "Order Placed";
   }
+}
+
+function formatOrderedQuantity(item) {
+  const quantity = Number(item?.quantity) || 0;
+  const unit = String(
+    item?.productUnit || item?.unit || item?.weight || item?.product?.unit || ""
+  ).trim();
+  if (!unit) return `${quantity} ${quantity === 1 ? "item" : "items"}`;
+
+  const match = unit.match(
+    /^(\d+(?:\.\d+)?)\s*(kg|g|gm|ml|l|ltr|litre|liter|pcs|pc|piece|pieces|pack|packs)$/i
+  );
+  if (!match) return `${quantity} × ${unit}`;
+
+  const amount = Number(match[1]) * quantity;
+  const kind = match[2].toLowerCase();
+  if (["g", "gm"].includes(kind)) {
+    return amount >= 1000 ? `${amount / 1000} kg` : `${amount} g`;
+  }
+  if (kind === "ml") {
+    return amount >= 1000 ? `${amount / 1000} L` : `${amount} ml`;
+  }
+  if (["l", "ltr", "litre", "liter"].includes(kind)) return `${amount} L`;
+  if (["pc", "pcs", "piece", "pieces"].includes(kind)) {
+    return `${amount} ${amount === 1 ? "piece" : "pieces"}`;
+  }
+  if (["pack", "packs"].includes(kind)) {
+    return `${amount} ${amount === 1 ? "pack" : "packs"}`;
+  }
+  return `${amount} kg`;
 }
 
 function formatAddress(address) {
@@ -1000,12 +1023,12 @@ export default function OrderTracking() {
                     </Text>
 
                     <Text style={styles.productWeight}>
-                      {item.weight || "Standard"}
+                      {item.productUnit || item.unit || item.weight || "Standard"}
                     </Text>
 
                     <View style={styles.quantityBadge}>
                       <Text style={styles.quantityText}>
-                        Qty {quantity}
+                        {formatOrderedQuantity(item)}
                       </Text>
                     </View>
                   </View>

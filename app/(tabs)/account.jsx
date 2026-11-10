@@ -364,10 +364,7 @@ export default function AccountScreen() {
             title="Help & Support"
             subtitle="We're here to help you"
             onPress={() =>
-              Alert.alert(
-                "Help & Support",
-                "Our support team is available for your assistance."
-              )
+              router.push("/account/help-support")
             }
           />
 
@@ -376,10 +373,7 @@ export default function AccountScreen() {
             title="Terms & Conditions"
             subtitle="Read our terms of service"
             onPress={() =>
-              Alert.alert(
-                "Terms & Conditions",
-                "Terms and conditions will be connected to the backend later."
-              )
+              router.push("/account/terms-conditions")
             }
           />
 
@@ -388,10 +382,7 @@ export default function AccountScreen() {
             title="Privacy Policy"
             subtitle="How your information is handled"
             onPress={() =>
-              Alert.alert(
-                "Privacy Policy",
-                "Privacy policy will be connected to the backend later."
-              )
+              router.push("/account/privacy-policy")
             }
             last
           />

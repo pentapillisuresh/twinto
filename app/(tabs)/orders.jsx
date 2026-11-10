@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -12,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { COLORS } from "../../constants";
 import { getOrders } from "../../services/orderService";
 
@@ -41,20 +42,57 @@ function paymentState(order) {
   return "pending";
 }
 
+function normalizeStatus(value) {
+  const status = String(value || "PLACED").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (["DELIVERED", "COMPLETED"].includes(status)) return "DELIVERED";
+  if (["PREPARING", "CONFIRMED", "PACKING", "OUT_FOR_DELIVERY", "PROCESSING", "PACKED", "SHIPPED", "DISPATCHED"].includes(status)) return "PREPARING";
+  if (["CANCELLED", "CANCELED"].includes(status)) return "CANCELLED";
+  return "PLACED";
+}
+
+function statusLabel(status) {
+  const value = normalizeStatus(status);
+  if (value === "DELIVERED") return "Delivered";
+  if (value === "PREPARING") return "Preparing";
+  if (value === "CANCELLED") return "Cancelled";
+  return "Order Placed";
+}
+
 function getStatusIcon(status) {
-  if (status === "Delivered") return "checkmark-circle";
-  if (status === "Out for delivery") return "bicycle";
-  if (status === "Preparing") return "cube";
-  return "time";
+  const value = normalizeStatus(status);
+  if (value === "DELIVERED") return "checkmark-circle";
+  if (value === "PREPARING") return "cube-outline";
+  if (value === "CANCELLED") return "close-circle";
+  return "time-outline";
 }
 function getStatusColor(status) {
-  if (status === "Delivered" || status === "Out for delivery") return COLORS.primary;
-  return COLORS.primaryDark;
+  const value = normalizeStatus(status);
+  if (value === "DELIVERED") return "#16844A";
+  if (value === "CANCELLED") return "#C53948";
+  return PREMIUM.primaryDark;
 }
 function getStatusBackground(status) {
-  if (status === "Delivered") return "#FFE3EF";
-  if (status === "Out for delivery") return "#FFF0F6";
-  return "#F8E8EF";
+  const value = normalizeStatus(status);
+  if (value === "DELIVERED") return "#EAF8F0";
+  if (value === "CANCELLED") return "#FFF0F1";
+  if (value === "PREPARING") return "#FFF5E8";
+  return PREMIUM.pinkSoft;
+}
+
+function formatQuantity(item) {
+  const quantity = Number(item?.quantity) || 0;
+  const unit = String(item?.productUnit ?? item?.unit ?? item?.weight ?? item?.product?.unit ?? "").trim();
+  if (!unit) return `Qty ${quantity}`;
+  const match = unit.match(/^(\d+(?:\.\d+)?)\s*(kg|g|gm|ml|l|ltr|litre|liter|pcs|pc|piece|pieces|pack|packs)$/i);
+  if (!match) return `${quantity} × ${unit}`;
+  const total = Number(match[1]) * quantity;
+  const type = match[2].toLowerCase();
+  if (type === "g" || type === "gm") return total >= 1000 ? `${total / 1000} kg` : `${total} g`;
+  if (type === "ml") return total >= 1000 ? `${total / 1000} L` : `${total} ml`;
+  if (["l", "ltr", "litre", "liter"].includes(type)) return `${total} L`;
+  if (["pc", "pcs", "piece", "pieces"].includes(type)) return `${total} ${total === 1 ? "piece" : "pieces"}`;
+  if (["pack", "packs"].includes(type)) return `${total} ${total === 1 ? "pack" : "packs"}`;
+  return `${total} kg`;
 }
 
 export default function OrdersScreen() {
@@ -62,20 +100,26 @@ export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState("paid");
 
-  // Original API call, unchanged.
-  useEffect(() => { loadOrders(); }, []);
-  async function loadOrders() {
+  const loadOrders = useCallback(async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
     try {
       const data = await getOrders();
-      setOrders(Array.isArray(data) ? data : []);
+      setOrders(Array.isArray(data) ? data : Array.isArray(data?.orders) ? data.orders : []);
     } catch (error) {
       console.log("Orders error:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  }, []);
+
+  // Refresh whenever the user returns from an order details screen.
+  useFocusEffect(useCallback(() => {
+    loadOrders();
+  }, [loadOrders]));
 
   const paidOrders = useMemo(() => orders.filter(o => paymentState(o) === "paid"), [orders]);
   const pendingOrders = useMemo(() => orders.filter(o => paymentState(o) !== "paid"), [orders]);
@@ -107,7 +151,7 @@ export default function OrdersScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusBadge, { backgroundColor: statusBackground }]}>
             <Ionicons name={getStatusIcon(item.status)} size={13} color={statusColor} />
-            <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={2}>{item.status || "Order placed"}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={2}>{statusLabel(item.status)}</Text>
           </View>
         </View>
 
@@ -120,7 +164,7 @@ export default function OrdersScreen() {
               <View style={styles.itemsCount}><Text style={styles.itemsCountText}>{item.items?.length || 0}</Text></View>
             </View>
             <Text style={styles.itemsSubtitle} numberOfLines={1}>
-              {item.items?.map(product => product.productName).join(", ") || "Order details"}
+              {item.items?.map(product => `${product.productName || product.name || "Product"} (${formatQuantity(product)})`).join(", ") || "Order details"}
             </Text>
           </View>
           <View style={styles.priceContainer}>
@@ -201,6 +245,7 @@ export default function OrdersScreen() {
           data={visibleOrders}
           keyExtractor={item => String(item.id)}
           renderItem={renderOrder}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadOrders(true)} colors={[PREMIUM.primary]} tintColor={PREMIUM.primary} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.list, { paddingBottom: 90 + insets.bottom, flexGrow: 1 }]}
           ListEmptyComponent={

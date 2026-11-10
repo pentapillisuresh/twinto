@@ -10,19 +10,28 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 
-import { router, useLocalSearchParams } from "expo-router";
+import {
+  router,
+  useLocalSearchParams,
+} from "expo-router";
 
 import { Ionicons } from "@expo/vector-icons";
 
-import { sendOtp, verifyOtp } from "../../services/authService";
+import {
+  sendOtp,
+  verifyOtp,
+} from "../../services/authService";
 
 import { useAuth } from "../../context";
 
@@ -30,15 +39,13 @@ import { useAuth } from "../../context";
 // LOGO
 // ==========================================
 
-// Assumes this file is in app/auth/ or a similar
-// two-level-deep folder, as in your existing imports.
-const LOGO = require("../../assets/images/twintologo512.png");
+const LOGO = require("../../assets/images/logo1.png");
 
 // ==========================================
-// PREMIUM COLORS
+// COLORS
 // ==========================================
 
-const PREMIUM = {
+const C = {
   primary: "#C9004F",
   primaryDark: "#A90042",
   navy: "#172033",
@@ -49,7 +56,12 @@ const PREMIUM = {
   border: "#E9DDE2",
   muted: "#858B95",
   disabled: "#D9A8B9",
+  green: "#169B62",
 };
+
+// ==========================================
+// CONSTANTS
+// ==========================================
 
 const OTP_LENGTH = 4;
 const DEFAULT_RESEND_SECONDS = 60;
@@ -86,19 +98,42 @@ export default function OTP() {
 
   const { login } = useAuth();
 
+  // ========================================
+  // STATE
+  // ========================================
+
   const [otp, setOtp] = useState("");
-  const [verifying, setVerifying] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [remainingSeconds, setRemainingSeconds] =
-    useState(initialResendAfter);
+
+  const [verifying, setVerifying] =
+    useState(false);
+
+  const [resending, setResending] =
+    useState(false);
+
+  const [
+    remainingSeconds,
+    setRemainingSeconds,
+  ] = useState(initialResendAfter);
+
+  const [focused, setFocused] =
+    useState(false);
+
+  // ========================================
+  // REFS
+  // ========================================
 
   const inputRef = useRef(null);
+
   const verifyingRef = useRef(false);
   const resendingRef = useRef(false);
 
   const resendUntilRef = useRef(
     Date.now() + initialResendAfter * 1000
   );
+
+  // ========================================
+  // VALIDATION
+  // ========================================
 
   const canVerify =
     otp.length === OTP_LENGTH &&
@@ -113,7 +148,7 @@ export default function OTP() {
     validMobile(mobile);
 
   // ========================================
-  // COUNTDOWN TIMER
+  // RESEND COUNTDOWN
   // ========================================
 
   useEffect(() => {
@@ -121,7 +156,8 @@ export default function OTP() {
       const remaining = Math.max(
         0,
         Math.ceil(
-          (resendUntilRef.current - Date.now()) / 1000
+          (resendUntilRef.current - Date.now()) /
+            1000
         )
       );
 
@@ -130,13 +166,16 @@ export default function OTP() {
 
     updateCountdown();
 
-    const interval = setInterval(updateCountdown, 1000);
+    const interval = setInterval(
+      updateCountdown,
+      1000
+    );
 
     return () => clearInterval(interval);
   }, []);
 
   // ========================================
-  // FOCUS OTP INPUT
+  // AUTO FOCUS OTP INPUT
   // ========================================
 
   useEffect(() => {
@@ -151,6 +190,10 @@ export default function OTP() {
     return () => clearTimeout(timer);
   }, [mobile]);
 
+  // ========================================
+  // FOCUS INPUT
+  // ========================================
+
   function focusOtpInput() {
     if (!verifying && !resending) {
       inputRef.current?.focus();
@@ -158,7 +201,7 @@ export default function OTP() {
   }
 
   // ========================================
-  // HANDLE OTP INPUT
+  // OTP INPUT HANDLER
   // ========================================
 
   function handleOtpChange(text) {
@@ -174,7 +217,10 @@ export default function OTP() {
   // ========================================
 
   async function handleVerify() {
-    if (verifyingRef.current || resendingRef.current) {
+    if (
+      verifyingRef.current ||
+      resendingRef.current
+    ) {
       return;
     }
 
@@ -201,32 +247,70 @@ export default function OTP() {
 
     try {
       // POST /api/v1/auth/verify-otp
-      const response = await verifyOtp(mobile, otp);
+      const response = await verifyOtp(
+        mobile,
+        otp
+      );
 
       if (response?.success === false) {
         throw new Error(
-          response?.message || "OTP verification failed."
+          response?.message ||
+            "OTP verification failed."
         );
       }
 
-      // Supports both wrapped and unwrapped API responses.
+      // Supports wrapped and unwrapped responses.
       const authData = response?.data?.token
         ? response.data
         : response;
 
-      if (!authData?.token || !authData?.user) {
+      if (
+        !authData?.token ||
+        !authData?.user
+      ) {
         throw new Error(
           "Invalid login response from server."
         );
       }
 
-      // Pass token and user to existing auth context.
+      // ====================================
+      // SAVE JWT AND USER
+      // ====================================
+
       await login(authData);
 
       setOtp("");
 
-      router.replace("/location");
+      // ====================================
+      // CHECK CUSTOMER PROFILE
+      // ====================================
+
+      const needsProfileSetup =
+        authData.needsProfileSetup ??
+        (
+          !authData.user?.name ||
+          String(authData.user.name)
+            .trim()
+            .toLowerCase() === "customer"
+        );
+
+      // ====================================
+      // NAVIGATION
+      // ====================================
+
+      if (needsProfileSetup) {
+        router.replace(
+          "/auth/complete-profile"
+        );
+      } else {
+        router.replace("/location");
+      }
     } catch (error) {
+      console.error(
+        "[OTP VERIFY ERROR]",
+        error
+      );
+
       Alert.alert(
         "Verification Failed",
         error?.message ||
@@ -270,7 +354,8 @@ export default function OTP() {
 
       if (response?.success === false) {
         throw new Error(
-          response?.message || "Unable to resend OTP."
+          response?.message ||
+            "Unable to resend OTP."
         );
       }
 
@@ -295,21 +380,30 @@ export default function OTP() {
         inputRef.current?.focus();
       }, 300);
     } catch (error) {
-      // If the server reports a cooldown, apply it locally.
-      const message = String(error?.message || "");
+      const message = String(
+        error?.message || ""
+      );
 
+      // Preserve backend resend cooldown.
       const match = message.match(
         /wait\s+(\d+)\s+seconds?/i
       );
 
       if (match) {
-        const wait = parseResendSeconds(match[1]);
+        const wait = parseResendSeconds(
+          match[1]
+        );
 
         resendUntilRef.current =
           Date.now() + wait * 1000;
 
         setRemainingSeconds(wait);
       }
+
+      console.error(
+        "[OTP RESEND ERROR]",
+        error
+      );
 
       Alert.alert(
         "Unable to Resend OTP",
@@ -341,27 +435,33 @@ export default function OTP() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={C.background}
+      />
+
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={
-          Platform.OS === "ios" ? "padding" : undefined
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
         }
       >
         <ScrollView
           style={styles.container}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={
+            styles.scrollContent
+          }
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* HERO */}
-          <View style={styles.hero}>
-            <View style={styles.circleLarge} />
-            <View style={styles.circleSmall} />
+          {/* ================================= */}
+          {/* HEADER */}
+          {/* ================================= */}
 
-            {/* LOGO REPLACES ORIGINAL TEXT */}
-            <LogoArtwork />
-
+          <View style={styles.header}>
             <Pressable
               onPress={changeNumber}
               disabled={verifying || resending}
@@ -371,53 +471,91 @@ export default function OTP() {
               ]}
             >
               <Ionicons
-                name="chevron-back"
-                size={24}
-                color={PREMIUM.navy}
+                name="arrow-back"
+                size={21}
+                color={C.navy}
               />
             </Pressable>
+
+            <Text style={styles.headerTitle}>
+              Mobile Verification
+            </Text>
+
+            <View style={styles.headerRight} />
           </View>
 
-          {/* OTP CARD */}
-          <View style={styles.card}>
-            <View style={styles.handle} />
+          {/* ================================= */}
+          {/* LOGO */}
+          {/* ================================= */}
 
-            <View style={styles.lockCircle}>
-              <Ionicons
-                name="shield-checkmark"
-                size={24}
-                color={PREMIUM.primary}
-              />
-            </View>
+          <View style={styles.logoSection}>
+            <Image
+              source={LOGO}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="TWINTO logo"
+            />
+          </View>
 
+          {/* ================================= */}
+          {/* TITLE */}
+          {/* ================================= */}
+
+          <View style={styles.intro}>
             <Text style={styles.title}>
               Verify your number
             </Text>
 
             <Text style={styles.subtitle}>
-              Enter the 4-digit code sent to
+              Enter the 4-digit verification code
+              sent to your mobile number.
             </Text>
+          </View>
 
-            {/* MOBILE NUMBER */}
-            <View style={styles.mobileRow}>
+          {/* ================================= */}
+          {/* VERIFIED MOBILE DETAILS */}
+          {/* ================================= */}
+
+          <View style={styles.mobileCard}>
+            <View style={styles.mobileIcon}>
+              <Ionicons
+                name="phone-portrait-outline"
+                size={19}
+                color={C.primary}
+              />
+            </View>
+
+            <View style={styles.mobileInfo}>
+              <Text style={styles.mobileLabel}>
+                OTP sent to
+              </Text>
+
               <Text style={styles.mobileNumber}>
                 +91 {mobile || ""}
               </Text>
-
-              <Pressable
-                onPress={changeNumber}
-                disabled={verifying || resending}
-              >
-                <Text style={styles.changeText}>
-                  Change
-                </Text>
-              </Pressable>
             </View>
 
-            {/* OTP INPUT */}
+            <Pressable
+              onPress={changeNumber}
+              disabled={verifying || resending}
+              style={styles.changeButton}
+            >
+              <Text style={styles.changeText}>
+                Change
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* ================================= */}
+          {/* OTP FORM */}
+          {/* ================================= */}
+
+          <View style={styles.formSection}>
             <Text style={styles.otpLabel}>
               Verification Code
             </Text>
+
+            {/* OTP BOXES */}
 
             <Pressable
               onPress={focusOtpInput}
@@ -429,19 +567,19 @@ export default function OTP() {
                 const digit = otp[index] || "";
 
                 const active =
-                  index ===
-                  Math.min(
-                    otp.length,
-                    OTP_LENGTH - 1
-                  );
+                  focused &&
+                  index === otp.length &&
+                  otp.length < OTP_LENGTH;
 
                 return (
                   <View
                     key={index}
                     style={[
                       styles.otpBox,
-                      active && styles.otpBoxActive,
-                      digit && styles.otpBoxFilled,
+                      active &&
+                        styles.otpBoxActive,
+                      digit &&
+                        styles.otpBoxFilled,
                     ]}
                   >
                     <Text style={styles.otpDigit}>
@@ -451,6 +589,8 @@ export default function OTP() {
                 );
               })}
 
+              {/* REAL INPUT FOR SMS AUTOFILL */}
+
               <TextInput
                 ref={inputRef}
                 value={otp}
@@ -458,13 +598,22 @@ export default function OTP() {
                 keyboardType="number-pad"
                 inputMode="numeric"
                 maxLength={OTP_LENGTH}
-                autoComplete="sms-otp"
+                autoComplete={
+                  Platform.OS === "android"
+                    ? "sms-otp"
+                    : "one-time-code"
+                }
                 textContentType="oneTimeCode"
+                importantForAutofill="yes"
                 returnKeyType="done"
-                editable={!verifying && !resending}
+                editable={
+                  !verifying && !resending
+                }
                 caretHidden
-                selectionColor={PREMIUM.primary}
+                selectionColor={C.primary}
                 style={styles.realInput}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
                 onSubmitEditing={() => {
                   if (canVerify) {
                     handleVerify();
@@ -473,11 +622,25 @@ export default function OTP() {
               />
             </Pressable>
 
-            <Text style={styles.otpHint}>
-              Enter the 4-digit OTP
-            </Text>
+            {/* AUTOFILL INFO */}
 
+            <View style={styles.autoFillRow}>
+              <Ionicons
+                name="information-circle-outline"
+                size={15}
+                color={C.muted}
+              />
+
+              <Text style={styles.autoFillText}>
+                Enter the OTP or use the SMS
+                autofill suggestion.
+              </Text>
+            </View>
+
+            {/* ================================= */}
             {/* RESEND OTP */}
+            {/* ================================= */}
+
             <View style={styles.resendRow}>
               <Text style={styles.resendNormal}>
                 Didn't receive the code?
@@ -490,13 +653,14 @@ export default function OTP() {
                 {resending ? (
                   <ActivityIndicator
                     size="small"
-                    color={PREMIUM.primary}
+                    color={C.primary}
                   />
                 ) : (
                   <Text
                     style={[
                       styles.resendText,
-                      !canResend && styles.resendDisabled,
+                      !canResend &&
+                        styles.resendDisabled,
                     ]}
                   >
                     {remainingSeconds > 0
@@ -507,7 +671,10 @@ export default function OTP() {
               </Pressable>
             </View>
 
+            {/* ================================= */}
             {/* VERIFY BUTTON */}
+            {/* ================================= */}
+
             <Pressable
               onPress={handleVerify}
               disabled={!canVerify}
@@ -515,7 +682,8 @@ export default function OTP() {
               accessibilityLabel="Verify OTP"
               style={({ pressed }) => [
                 styles.verifyButton,
-                !canVerify && styles.verifyDisabled,
+                !canVerify &&
+                  styles.verifyDisabled,
                 pressed &&
                   canVerify &&
                   styles.buttonPressed,
@@ -523,38 +691,37 @@ export default function OTP() {
             >
               {verifying ? (
                 <ActivityIndicator
-                  color={PREMIUM.white}
-                  style={styles.buttonLoader}
+                  color={C.white}
+                  size="small"
                 />
               ) : (
-                <Text style={styles.verifyText}>
-                  Verify & Continue
-                </Text>
-              )}
+                <>
+                  <Text style={styles.verifyText}>
+                    Verify & Continue
+                  </Text>
 
-              <View style={styles.arrowCircle}>
-                <Ionicons
-                  name={
-                    verifying
-                      ? "hourglass-outline"
-                      : "arrow-forward"
-                  }
-                  size={18}
-                  color={PREMIUM.primary}
-                />
-              </View>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={19}
+                    color={C.white}
+                  />
+                </>
+              )}
             </Pressable>
 
+            {/* ================================= */}
             {/* SECURITY */}
+            {/* ================================= */}
+
             <View style={styles.securityRow}>
               <Ionicons
-                name="lock-closed-outline"
-                size={14}
-                color={PREMIUM.muted}
+                name="shield-checkmark-outline"
+                size={16}
+                color={C.green}
               />
 
               <Text style={styles.securityText}>
-                Your verification is secure
+                Secure verification powered by TWINTO
               </Text>
             </View>
           </View>
@@ -565,32 +732,13 @@ export default function OTP() {
 }
 
 // ==========================================
-// LOGO ARTWORK
-// ==========================================
-
-function LogoArtwork() {
-  return (
-    <View style={styles.imageArea}>
-      <View style={styles.imageCard}>
-        <Image
-          source={LOGO}
-          style={styles.logo}
-          resizeMode="contain"
-          accessibilityLabel="TWINTO logo"
-        />
-      </View>
-    </View>
-  );
-}
-
-// ==========================================
 // STYLES
 // ==========================================
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: PREMIUM.background,
+    backgroundColor: C.background,
   },
 
   keyboard: {
@@ -599,215 +747,194 @@ const styles = StyleSheet.create({
 
   container: {
     flex: 1,
-    backgroundColor: PREMIUM.background,
+    backgroundColor: C.background,
   },
 
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
   },
 
-  hero: {
-    height: 275,
-    width: "100%",
-    backgroundColor: PREMIUM.pinkSoft,
+  // ========================================
+  // HEADER
+  // ========================================
+
+  header: {
+    height: 58,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    position: "relative",
-  },
-
-  circleLarge: {
-    position: "absolute",
-    width: 370,
-    height: 370,
-    borderRadius: 185,
-    backgroundColor: PREMIUM.pinkLight,
-    top: -145,
-    right: -100,
-  },
-
-  circleSmall: {
-    position: "absolute",
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: PREMIUM.white,
-    opacity: 0.5,
-    bottom: -110,
-    left: -65,
-  },
-
-  imageArea: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
-  },
-
-  imageCard: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: PREMIUM.white,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 5,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    overflow: "hidden",
-  },
-
-  logo: {
-    width: 185,
-    height: 185,
+    justifyContent: "space-between",
   },
 
   backButton: {
-    position: "absolute",
-    top: 15,
-    left: 18,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: PREMIUM.white,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
-    elevation: 4,
+  },
+
+  headerTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: C.navy,
+  },
+
+  headerRight: {
+    width: 40,
   },
 
   pressed: {
     opacity: 0.7,
   },
 
-  card: {
-    flexGrow: 1,
-    backgroundColor: PREMIUM.white,
-    marginHorizontal: 10,
-    marginTop: -25,
-    borderTopLeftRadius: 34,
-    borderTopRightRadius: 34,
-    paddingHorizontal: 23,
-    paddingTop: 10,
-    paddingBottom: 24,
-    zIndex: 10,
-    elevation: 10,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: -4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    alignItems: "center",
-  },
+  // ========================================
+  // LOGO
+  // ========================================
 
-  handle: {
-    width: 42,
-    height: 4,
-    borderRadius: 10,
-    backgroundColor: "#E3E0E2",
+  logoSection: {
+    height: 118,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
     marginBottom: 10,
   },
 
-  lockCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#FCE8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 7,
+  logo: {
+    width: 150,
+    height: 110,
+  },
+
+  // ========================================
+  // INTRO
+  // ========================================
+
+  intro: {
+    marginBottom: 23,
   },
 
   title: {
     fontSize: 25,
-    lineHeight: 30,
     fontWeight: "900",
-    color: PREMIUM.navy,
-    textAlign: "center",
+    color: C.navy,
+    letterSpacing: -0.5,
   },
 
   subtitle: {
-    marginTop: 4,
-    fontSize: 12.5,
-    lineHeight: 18,
-    color: PREMIUM.muted,
-    textAlign: "center",
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: C.muted,
+    maxWidth: 320,
   },
 
-  mobileRow: {
+  // ========================================
+  // MOBILE CARD
+  // ========================================
+
+  mobileCard: {
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
     flexDirection: "row",
     alignItems: "center",
+    marginBottom: 28,
+  },
+
+  mobileIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 10,
+    backgroundColor: C.pinkSoft,
+    alignItems: "center",
     justifyContent: "center",
-    marginTop: 5,
-    gap: 10,
+  },
+
+  mobileInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  mobileLabel: {
+    fontSize: 10,
+    color: C.muted,
+    marginBottom: 4,
   },
 
   mobileNumber: {
     fontSize: 14,
-    color: PREMIUM.navy,
     fontWeight: "900",
+    color: C.navy,
+  },
+
+  changeButton: {
+    paddingHorizontal: 9,
+    paddingVertical: 8,
   },
 
   changeText: {
     fontSize: 12,
-    color: PREMIUM.primary,
-    fontWeight: "900",
+    fontWeight: "800",
+    color: C.primary,
+  },
+
+  // ========================================
+  // OTP FORM
+  // ========================================
+
+  formSection: {
+    width: "100%",
   },
 
   otpLabel: {
-    width: "100%",
-    marginTop: 14,
-    marginBottom: 7,
     fontSize: 12,
-    color: PREMIUM.navy,
     fontWeight: "800",
+    color: C.navy,
+    marginBottom: 12,
   },
 
   otpWrapper: {
     width: "100%",
-    height: 52,
+    height: 58,
     flexDirection: "row",
     justifyContent: "space-between",
     position: "relative",
+    gap: 10,
   },
 
   otpBox: {
     flex: 1,
-    maxWidth: 65,
-    height: 52,
-    marginHorizontal: 4,
-    borderRadius: 14,
-    borderWidth: 1.2,
-    borderColor: PREMIUM.border,
-    backgroundColor: "#FFFDFE",
+    height: 58,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
   },
 
   otpBoxActive: {
     borderWidth: 2,
-    borderColor: PREMIUM.primary,
-    backgroundColor: "#FFF8FA",
+    borderColor: C.primary,
+    backgroundColor: "#FFFAFC",
   },
 
   otpBoxFilled: {
-    borderColor: PREMIUM.primary,
-    backgroundColor: "#FFF8FA",
+    borderColor: C.primary,
+    backgroundColor: C.pinkSoft,
   },
 
   otpDigit: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "900",
-    color: PREMIUM.navy,
+    color: C.navy,
     textAlign: "center",
   },
 
@@ -816,7 +943,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     width: "100%",
-    height: 52,
+    height: 58,
     backgroundColor: "transparent",
     color: "transparent",
     fontSize: 1,
@@ -826,99 +953,94 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
 
-  otpHint: {
-    marginTop: 5,
-    fontSize: 10,
-    color: PREMIUM.muted,
-    fontWeight: "500",
+  autoFillRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
   },
+
+  autoFillText: {
+    flex: 1,
+    fontSize: 11,
+    color: C.muted,
+    lineHeight: 17,
+  },
+
+  // ========================================
+  // RESEND OTP
+  // ========================================
 
   resendRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-    gap: 5,
+    marginTop: 26,
+    gap: 6,
   },
 
   resendNormal: {
-    fontSize: 11,
-    color: PREMIUM.muted,
+    fontSize: 12,
+    color: C.muted,
   },
 
   resendText: {
-    fontSize: 11,
-    color: PREMIUM.primary,
+    fontSize: 12,
+    color: C.primary,
     fontWeight: "900",
   },
 
   resendDisabled: {
-    color: PREMIUM.muted,
+    color: C.muted,
   },
+
+  // ========================================
+  // VERIFY BUTTON
+  // ========================================
 
   verifyButton: {
     width: "100%",
     height: 54,
-    borderRadius: 29,
-    backgroundColor: PREMIUM.primary,
-    marginTop: 16,
-    paddingLeft: 20,
-    paddingRight: 6,
+    borderRadius: 11,
+    backgroundColor: C.primary,
+    marginTop: 27,
+    paddingHorizontal: 19,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    elevation: 4,
-    shadowColor: PREMIUM.primary,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.18,
-    shadowRadius: 7,
+    gap: 12,
   },
 
   verifyDisabled: {
-    backgroundColor: PREMIUM.disabled,
-    shadowOpacity: 0,
+    backgroundColor: C.disabled,
   },
 
   buttonPressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.985 }],
+    transform: [{ scale: 0.99 }],
   },
 
   verifyText: {
-    flex: 1,
-    color: PREMIUM.white,
     fontSize: 15,
     fontWeight: "900",
-    textAlign: "center",
+    color: C.white,
   },
 
-  buttonLoader: {
-    flex: 1,
-  },
-
-  arrowCircle: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: PREMIUM.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  // ========================================
+  // SECURITY
+  // ========================================
 
   securityRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-    gap: 5,
+    marginTop: 22,
+    gap: 7,
   },
 
   securityText: {
     fontSize: 10,
-    color: PREMIUM.muted,
+    color: C.muted,
     fontWeight: "600",
   },
 });

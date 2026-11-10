@@ -1,8 +1,8 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
 import {
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,141 +14,145 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "../../constants";
 import { useAuth } from "../../context";
+import { updateProfile } from "../../services/authService";
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+function getDisplayName(value) {
+  const savedName = String(value || "").trim();
+
+  if (savedName.toLowerCase() === "customer") {
+    return "";
+  }
+
+  return savedName;
+}
+
+function formatMobile(value) {
+  const mobile = String(value || "").trim();
+
+  if (!mobile) {
+    return "";
+  }
+
+  if (mobile.startsWith("+")) {
+    return mobile;
+  }
+
+  return `+91 ${mobile}`;
+}
+
+// ==========================================
+// EDIT PROFILE SCREEN
+// ==========================================
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const { user, setUser } = useAuth();
 
-  const [name, setName] = useState(user?.name || "ANIL");
-  const [mobile] = useState(
-    user?.mobile || "+91 98490 12345"
-  );
+  // ==========================================
+  // PROFILE STATE
+  // ==========================================
 
-  const [photo, setPhoto] = useState(
-    user?.photo || user?.avatar || null
+  const [name, setName] = useState(
+    getDisplayName(user?.name)
   );
 
   const [saving, setSaving] = useState(false);
 
+  const mobile = String(user?.mobile || "");
+
+  // ==========================================
+  // SYNC USER DATA
+  // ==========================================
+
+  useEffect(() => {
+    setName(getDisplayName(user?.name));
+  }, [user?.name]);
+
+  // ==========================================
+  // SAFE AREA
+  // ==========================================
+
   const topInset =
     Platform.OS === "ios" ||
-    (Platform.OS === "android" && Platform.Version >= 35)
+    (Platform.OS === "android" &&
+      Platform.Version >= 35)
       ? insets.top
       : 0;
 
-  // OPEN CAMERA
-  async function openCamera() {
-    try {
-      const permission =
-        await ImagePicker.requestCameraPermissionsAsync();
+  // ==========================================
+  // SAVE PROFILE TO MYSQL
+  // ==========================================
 
-      if (!permission.granted) {
-        Alert.alert(
-          "Camera Permission",
-          "Please allow camera access to take a profile photo."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setPhoto(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert(
-        "Camera Error",
-        error?.message || "Could not open the camera."
-      );
-    }
-  }
-
-  // OPEN GALLERY
-  async function openGallery() {
-    try {
-      const result =
-        await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.8,
-        });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setPhoto(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert(
-        "Gallery Error",
-        error?.message || "Could not select a photo."
-      );
-    }
-  }
-
-  // PROFILE PHOTO OPTIONS
-  function choosePhoto() {
-    Alert.alert(
-      "Profile Photo",
-      "Choose how you want to add your photo.",
-      [
-        {
-          text: "Take Photo",
-          onPress: openCamera,
-        },
-        {
-          text: "Choose from Gallery",
-          onPress: openGallery,
-        },
-        ...(photo
-          ? [
-              {
-                text: "Remove Photo",
-                style: "destructive",
-                onPress: () => setPhoto(null),
-              },
-            ]
-          : []),
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-      ]
-    );
-  }
-
-  // ORIGINAL SAVE LOGIC + PHOTO
   async function saveProfile() {
-    const trimmedName = name.trim();
+    if (saving) {
+      return;
+    }
 
-    if (!trimmedName) {
-      Alert.alert("Required", "Please enter your name.");
+    const trimmedName = String(name || "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+    // Validate full name.
+    if (
+      trimmedName.length < 2 ||
+      trimmedName.length > 120
+    ) {
+      Alert.alert(
+        "Invalid Name",
+        "Please enter your full name between 2 and 120 characters."
+      );
       return;
     }
 
     try {
       setSaving(true);
 
+      // ======================================
+      // STEP 1: SAVE NAME TO BACKEND MYSQL
+      // ======================================
+
+      // PUT /api/v1/auth/profile
+      // JWT is attached by the existing API service.
+      const response = await updateProfile(trimmedName);
+
+      // Support wrapped and unwrapped responses.
+      const savedUser =
+        response?.user ||
+        response?.data?.user;
+
+      if (!savedUser?.id) {
+        throw new Error(
+          "Profile was not saved correctly. Please try again."
+        );
+      }
+
+      // ======================================
+      // STEP 2: UPDATE LOCAL USER CONTEXT
+      // ======================================
+
       const updatedUser = {
         ...user,
-        name: trimmedName,
-        mobile,
-        photo,
+        ...savedUser,
       };
 
       await setUser(updatedUser);
+
+      // ======================================
+      // STEP 3: SHOW SUCCESS MESSAGE
+      // ======================================
 
       Alert.alert(
         "Success",
@@ -161,14 +165,24 @@ export default function ProfileScreen() {
         ]
       );
     } catch (error) {
+      console.error(
+        "[PROFILE UPDATE ERROR]",
+        error
+      );
+
       Alert.alert(
         "Error",
-        error?.message || "Could not update profile."
+        error?.message ||
+          "Could not update profile. Please try again."
       );
     } finally {
       setSaving(false);
     }
   }
+
+  // ==========================================
+  // SCREEN
+  // ==========================================
 
   return (
     <View style={styles.container}>
@@ -181,12 +195,16 @@ export default function ProfileScreen() {
       <View
         style={[
           styles.header,
-          { paddingTop: topInset + 10 },
+          {
+            paddingTop: topInset + 10,
+          },
         ]}
       >
+        {/* BACK BUTTON */}
         <Pressable
           style={styles.headerButton}
           onPress={() => router.back()}
+          disabled={saving}
         >
           <Ionicons
             name="arrow-back"
@@ -195,15 +213,18 @@ export default function ProfileScreen() {
           />
         </Pressable>
 
+        {/* HEADER TITLE */}
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>
             Edit Profile
           </Text>
+
           <Text style={styles.headerSubtitle}>
             Manage your personal information
           </Text>
         </View>
 
+        {/* HEADER ICON */}
         <View style={styles.headerTrailing}>
           <Ionicons
             name="person-outline"
@@ -216,7 +237,9 @@ export default function ProfileScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={
-          Platform.OS === "ios" ? "padding" : undefined
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
         }
       >
         <ScrollView
@@ -224,59 +247,33 @@ export default function ProfileScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.content}
         >
-          {/* PROFILE PHOTO */}
-          <View style={styles.profileSection}>
-            <Pressable
-              style={styles.avatarContainer}
-              onPress={choosePhoto}
-            >
-              <View style={styles.avatar}>
-                {photo ? (
-                  <Image
-                    source={{ uri: photo }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <Text style={styles.avatarText}>
-                    {name?.charAt(0)?.toUpperCase() || "A"}
-                  </Text>
-                )}
-              </View>
+          {/* ================================= */}
+          {/* PROFILE INFORMATION */}
+          {/* NO CAMERA OR PHOTO OPTION */}
+          {/* ================================= */}
 
-              <View style={styles.camera}>
-                <Ionicons
-                  name="camera"
-                  size={17}
-                  color={COLORS.white}
-                />
-              </View>
-            </Pressable>
+          <View style={styles.profileSection}>
+            <View style={styles.profileIconContainer}>
+              <Ionicons
+                name="person"
+                size={45}
+                color={COLORS.primary}
+              />
+            </View>
 
             <Text style={styles.profileName}>
-              {name || "Your Profile"}
+              {getDisplayName(name) || "Your Profile"}
             </Text>
 
             <Text style={styles.profileMobile}>
-              {mobile}
+              {formatMobile(mobile)}
             </Text>
-
-            <TouchableOpacity
-              style={styles.changePhotoButton}
-              onPress={choosePhoto}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name="camera-outline"
-                size={17}
-                color={COLORS.primary}
-              />
-              <Text style={styles.changePhotoText}>
-                {photo ? "Change Photo" : "Add Profile Photo"}
-              </Text>
-            </TouchableOpacity>
           </View>
 
+          {/* ================================= */}
           {/* PERSONAL INFORMATION */}
+          {/* ================================= */}
+
           <View style={styles.formCard}>
             <View style={styles.sectionHeading}>
               <View style={styles.sectionIcon}>
@@ -291,13 +288,17 @@ export default function ProfileScreen() {
                 <Text style={styles.heading}>
                   Personal Information
                 </Text>
+
                 <Text style={styles.sectionSubtitle}>
                   Update your profile details
                 </Text>
               </View>
             </View>
 
-            <Text style={styles.label}>FULL NAME</Text>
+            {/* FULL NAME */}
+            <Text style={styles.label}>
+              FULL NAME
+            </Text>
 
             <View style={styles.inputContainer}>
               <Ionicons
@@ -309,13 +310,19 @@ export default function ProfileScreen() {
               <TextInput
                 value={name}
                 onChangeText={setName}
-                placeholder="Enter your name"
+                placeholder="Enter your full name"
                 placeholderTextColor={COLORS.muted}
                 style={styles.input}
                 autoCapitalize="words"
+                autoComplete="name"
+                autoCorrect={false}
+                maxLength={120}
+                returnKeyType="done"
+                editable={!saving}
               />
             </View>
 
+            {/* MOBILE NUMBER */}
             <Text style={styles.label}>
               MOBILE NUMBER
             </Text>
@@ -333,9 +340,10 @@ export default function ProfileScreen() {
               />
 
               <TextInput
-                value={mobile}
+                value={formatMobile(mobile)}
                 editable={false}
                 style={styles.input}
+                selectTextOnFocus={false}
               />
 
               <Ionicons
@@ -345,18 +353,24 @@ export default function ProfileScreen() {
               />
             </View>
 
+            {/* MOBILE INFORMATION */}
             <View style={styles.noteRow}>
               <Ionicons
                 name="information-circle-outline"
                 size={16}
                 color={COLORS.muted}
               />
+
               <Text style={styles.note}>
                 Your mobile number is linked to your
                 TWINTO account.
               </Text>
             </View>
           </View>
+
+          {/* ================================= */}
+          {/* SAVE CHANGES BUTTON */}
+          {/* ================================= */}
 
           <TouchableOpacity
             activeOpacity={0.85}
@@ -389,11 +403,19 @@ export default function ProfileScreen() {
   );
 }
 
+// ==========================================
+// STYLES
+// ==========================================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
+  // ========================================
+  // HEADER
+  // ========================================
 
   header: {
     backgroundColor: COLORS.white,
@@ -443,11 +465,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  // ========================================
+  // CONTENT
+  // ========================================
+
   content: {
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 55,
   },
+
+  // ========================================
+  // PROFILE SECTION
+  // ========================================
 
   profileSection: {
     alignItems: "center",
@@ -455,42 +485,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  avatarContainer: {
-    position: "relative",
-  },
-
-  avatar: {
+  profileIconContainer: {
     width: 104,
     height: 104,
     borderRadius: 52,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+    backgroundColor: COLORS.pinkSoft,
     borderWidth: 4,
-    borderColor: COLORS.white,
-  },
-
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-  },
-
-  avatarText: {
-    color: COLORS.white,
-    fontSize: 40,
-    fontWeight: "900",
-  },
-
-  camera: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    borderWidth: 3,
     borderColor: COLORS.white,
     alignItems: "center",
     justifyContent: "center",
@@ -501,6 +501,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 19,
     fontWeight: "900",
+    textAlign: "center",
   },
 
   profileMobile: {
@@ -509,22 +510,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  changePhotoButton: {
-    marginTop: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: COLORS.pinkSoft,
-    paddingHorizontal: 17,
-    paddingVertical: 11,
-    borderRadius: 12,
-  },
-
-  changePhotoText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "800",
-  },
+  // ========================================
+  // FORM CARD
+  // ========================================
 
   formCard: {
     backgroundColor: COLORS.white,
@@ -562,6 +550,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
+  // ========================================
+  // INPUTS
+  // ========================================
+
   label: {
     marginBottom: 8,
     fontSize: 10,
@@ -593,6 +585,10 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  // ========================================
+  // INFORMATION NOTE
+  // ========================================
+
   noteRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -606,6 +602,10 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     lineHeight: 17,
   },
+
+  // ========================================
+  // SAVE BUTTON
+  // ========================================
 
   saveButton: {
     marginTop: 25,
